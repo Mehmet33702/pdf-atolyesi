@@ -12,40 +12,44 @@
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171c27;--panel:#222a39;--ink:#e8ecf4;--mute:#9aa5ba;--line:#38425a;--acc:#7ea2ff;--accink:#10182b;color-scheme:dark}}
 :root[data-theme="dark"]{--bg:#171c27;--panel:#222a39;--ink:#e8ecf4;--mute:#9aa5ba;--line:#38425a;--acc:#7ea2ff;--accink:#10182b;color-scheme:dark}
-html{scroll-padding-top:env(safe-area-inset-top,0px)}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh}
+html{scroll-padding-top:env(safe-area-inset-top,0px);-webkit-text-size-adjust:100%}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh;overflow-x:clip}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:var(--panel);z-index:10}
-header{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:var(--panel);border-bottom:1px solid var(--line);display:flex;gap:6px;align-items:center;padding:8px 12px;overflow-x:auto;white-space:nowrap}
-header .sp{flex:1}
-header .g{display:flex;gap:2px;padding:0 8px;border-left:1px solid var(--line)}
+
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--panel);border-bottom:1px solid var(--line);display:flex;gap:6px;align-items:center;padding:8px 12px;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+header::-webkit-scrollbar{display:none}
+header .sp{flex:1;min-width:8px}
+header .g{display:flex;gap:3px;align-items:center;padding:0 8px;border-left:1px solid var(--line);flex-shrink:0}
 header .g:first-child{border:0;padding-left:0}
-button,.btn{font:inherit;color:var(--ink);background:transparent;border:1px solid transparent;border-radius:6px;padding:6px 10px;cursor:pointer}
+header .g-actions{display:flex;gap:6px;align-items:center;flex-shrink:0}
+button,.btn{font:inherit;color:var(--ink);background:transparent;border:1px solid transparent;border-radius:6px;padding:6px 10px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:4px;flex-shrink:0}
 button:hover,.btn:hover{background:var(--bg)}
 button:focus-visible,.btn:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
 button[aria-pressed="true"]{background:var(--acc);color:var(--accink)}
-button.pri{background:var(--acc);color:var(--accink);font-weight:500}
-button.sec{background:var(--line);color:var(--ink);font-weight:500}
+button.pri,.btn.pri{background:var(--acc);color:var(--accink);font-weight:500}
+button.sec,.btn.sec{background:var(--line);color:var(--ink);font-weight:500}
 button:disabled{opacity:.4;cursor:default}
-input[type=color]{width:30px;height:30px;padding:0;border:1px solid var(--line);border-radius:6px;background:none;cursor:pointer}
+input[type=color]{width:30px;height:30px;padding:0;border:1px solid var(--line);border-radius:6px;background:none;cursor:pointer;flex-shrink:0}
 input[type=color].bg-color{border-radius:50%;width:26px;height:26px}
+.bg-wrap{display:flex;align-items:center;gap:4px;margin-left:6px;border-left:1px solid var(--line);padding-left:8px}
 
-.ver{font-size:12px;color:var(--mute);margin-left:12px;font-weight:500;user-select:none}
+.ver{font-size:12px;color:var(--mute);margin-left:10px;font-weight:500;user-select:none}
 
-#empty{max-width:520px;margin:12vh auto 0;padding:32px 24px;text-align:center}
+#empty{max-width:520px;margin:10vh auto 0;padding:32px 20px;text-align:center}
 #empty h1{font-size:26px;line-height:1.2;margin:0 0 8px;font-weight:600}
 #empty p{color:var(--mute);margin:0 0 24px}
+#empty .acts{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
 #empty.drag{outline:2px dashed var(--acc);outline-offset:-8px}
-#pages{padding:16px 12px 140px;display:flex;flex-direction:column;align-items:center;gap:6px}
-.bar{display:flex;gap:2px;align-items:center;font-size:13px;color:var(--mute);margin-top:10px}
-.bar span{margin-right:8px}
-.bar button{padding:3px 8px;font-size:13px}
-.sheet{position:relative;background:#fff;box-shadow:var(--sheet);max-width:none}
+#pages{padding:16px 12px 140px;display:flex;flex-direction:column;align-items:center;gap:6px;overflow-x:auto}
+.bar{display:flex;gap:4px;align-items:center;font-size:13px;color:var(--mute);margin-top:10px;max-width:100%;flex-wrap:wrap}
+.bar span{margin-right:auto}
+.bar button{padding:4px 8px;font-size:13px}
+.sheet{position:relative;background:#fff;box-shadow:var(--sheet);max-width:none;flex-shrink:0}
 .sheet canvas{position:absolute;inset:0;width:100%;height:100%}
-.ov{touch-action:none}
-.ov.off{pointer-events:none}
-.ov.on{cursor:crosshair}
-.ti{position:absolute;margin:0;padding:0;border:1px dashed var(--acc);background:rgba(255,255,255,.85);font-family:"IBM Plex Sans",Arial,sans-serif;line-height:1;min-width:120px;outline:none;z-index:5}
+.ov.off{pointer-events:none;touch-action:auto}
+.ov.on{cursor:crosshair;touch-action:none}
+.ti{position:absolute;margin:0;padding:2px 4px;border:1px dashed var(--acc);background:rgba(255,255,255,.92);font-family:"IBM Plex Sans",Arial,sans-serif;line-height:1.1;min-width:120px;outline:none;z-index:5}
 
 /* Yüzer OCR Düzenleme Kartı */
 .ocr-popover{
@@ -62,73 +66,124 @@ input[type=color].bg-color{border-radius:50%;width:26px;height:26px}
   flex-direction:column;
   gap:8px;
 }
-.ocr-popover-bar{
-  display:flex;
-  align-items:center;
-  gap:6px;
-  flex-wrap:wrap;
-  font-size:12px;
-  color:var(--mute);
-}
-.ocr-popover-bar button{
-  padding:3px 8px;
-  font-size:13px;
-  border:1px solid var(--line);
-  border-radius:5px;
-}
-.ocr-popover-bar button.active{
-  background:var(--acc);
-  color:var(--accink);
-  border-color:var(--acc);
-}
-.ocr-popover-bar input[type=number]{
-  width:52px;
-  padding:3px 5px;
-  border:1px solid var(--line);
-  border-radius:5px;
-  background:var(--bg);
-  color:var(--ink);
-  font:inherit;
-}
-.ocr-popover-bar input[type=color]{
-  width:24px;
-  height:24px;
-  border-radius:4px;
-}
-.ocr-popover textarea{
-  width:100%;
-  min-height:64px;
-  max-height:220px;
-  padding:8px 10px;
-  border:1px solid var(--line);
-  border-radius:6px;
-  background:var(--bg);
-  color:var(--ink);
-  font:15px/1.4 "IBM Plex Sans",Arial,sans-serif;
-  resize:vertical;
-}
-.ocr-popover-actions{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  gap:6px;
-}
-.ocr-popover-hint{
-  font-size:11px;
-  color:var(--mute);
-}
+.ocr-popover-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;color:var(--mute)}
+.ocr-popover-bar button{padding:4px 10px;font-size:13px;border:1px solid var(--line);border-radius:5px}
+.ocr-popover-bar button.active{background:var(--acc);color:var(--accink);border-color:var(--acc)}
+.ocr-popover-bar input[type=number]{width:56px;padding:4px 6px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink);font:inherit}
+.ocr-popover-bar input[type=color]{width:26px;height:26px;border-radius:4px}
+.ocr-popover textarea{width:100%;min-height:68px;max-height:220px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:15px/1.4 "IBM Plex Sans",Arial,sans-serif;resize:vertical}
+.ocr-popover-actions{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.ocr-popover-hint{font-size:11px;color:var(--mute)}
 
-/* Sağ Üst Bildirim */
-#toast{position:fixed;right:24px;top:24px;background:var(--ink);color:var(--bg);padding:12px 20px;border-radius:8px;font-size:14px;opacity:0;pointer-events:none;transform:translateX(20px);transition:opacity .3s, transform .3s;max-width:360px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.15);border-left:4px solid var(--acc)}
-#toast.show{opacity:1;transform:translateX(0)}
+/* Bildirim ve Hata Uyarıları */
+#toast{
+  position:fixed;
+  right:20px;
+  top:calc(62px + env(safe-area-inset-top,0px));
+  background:#111827;
+  color:#ffffff;
+  padding:12px 18px;
+  border-radius:8px;
+  font-size:14px;
+  font-weight:500;
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+  transform:translateY(-10px);
+  transition:opacity .25s ease, transform .25s ease, visibility .25s;
+  max-width:360px;
+  z-index:2147483647;
+  box-shadow:0 8px 24px rgba(0,0,0,0.3);
+  border-left:4px solid #3b82f6;
+}
+#toast.err{border-left-color:#ef4444;background:#7f1d1d}
+#toast.show{opacity:1;visibility:visible;transform:translateY(0)}
+
+/* Mobil Uyumlu 2 Satırlı Üst Menü (≤ 768px) */
+@media (max-width:768px){
+  header{
+    flex-wrap:wrap;
+    overflow-x:visible;
+    padding:6px 8px;
+    gap:6px 4px;
+    justify-content:space-between;
+  }
+  header .sp,.ver{display:none}
+  header .g{border:0;padding:0;gap:3px}
+  button,.btn{padding:6px 8px;min-height:34px;font-size:13px}
+
+  .g-file{order:1}
+  .g-view{order:2}
+  .g-actions{order:3;gap:4px}
+
+  #tools{
+    order:4;
+    flex-basis:100%;
+    border-top:1px solid var(--line);
+    padding-top:6px;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+    gap:4px;
+  }
+  #tools::-webkit-scrollbar{display:none}
+  #tools button{
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:5px 10px;
+    background:var(--bg);
+  }
+  #tools button[aria-pressed="true"]{
+    background:var(--acc);
+    color:var(--accink);
+    border-color:var(--acc);
+  }
+
+  #empty{margin-top:6vh;padding:24px 16px}
+  #empty h1{font-size:22px}
+  #pages{padding:10px 8px 160px}
+  .bar{width:100% !important;padding:0 4px}
+  .bar button{min-height:32px;padding:4px 9px;font-size:13px}
+  .ti{font-size:16px !important}
+
+  .ocr-popover{
+    position:fixed !important;
+    left:8px !important;
+    right:8px !important;
+    top:auto !important;
+    bottom:calc(8px + env(safe-area-inset-bottom,0px)) !important;
+    width:auto !important;
+    max-height:58vh;
+    overflow-y:auto;
+    z-index:999;
+    padding:12px;
+  }
+  .ocr-popover textarea,
+  .ocr-popover-bar input[type=number]{font-size:16px}
+  .ocr-popover-hint{display:none}
+  .ocr-popover-actions{justify-content:flex-end}
+
+  /* Mobilde uyarılar üstte görünür, klavye/alt bar altında kalmaz */
+  #toast{
+    left:12px;
+    right:12px;
+    top:calc(12px + env(safe-area-inset-top,0px));
+    bottom:auto;
+    max-width:none;
+    text-align:center;
+    border-left:4px solid #3b82f6;
+  }
+  #toast.err{border-left-color:#ef4444}
+}
 </style>
 </head>
 <body>
 <header>
-  <div class="g">
+  <div class="g g-file">
     <label class="btn pri" for="file">PDF aç</label>
     <input id="file" type="file" accept="application/pdf" hidden>
   </div>
+
   <div class="g" id="tools">
     <button data-t="select" aria-pressed="true">Gez</button>
     <button data-t="text" aria-pressed="false">Metin</button>
@@ -137,42 +192,66 @@ input[type=color].bg-color{border-radius:50%;width:26px;height:26px}
     <button data-t="rect" aria-pressed="false">Dikdörtgen</button>
     <button data-t="white" aria-pressed="false">Beyaz kutu</button>
     <input id="color" type="color" value="#e5484d" aria-label="Çizim/Metin Rengi" title="Çizim/Metin Rengi">
-    <div style="display:flex;align-items:center;gap:4px;margin-left:6px;border-left:1px solid var(--line);padding-left:8px;">
+    <div class="bg-wrap">
       <span style="font-size:12px;color:var(--mute);">Zemin:</span>
       <input id="bgColor" type="color" class="bg-color" value="#ffffff" aria-label="Zemin Rengi" title="Sayfa Arka Plan Rengi">
     </div>
   </div>
-  <div class="g">
-    <button id="undo" disabled>Geri al</button>
+
+  <div class="g g-view">
+    <button id="undo" disabled title="Geri al">Geri al</button>
     <button id="zo" aria-label="Uzaklaştır">−</button>
+    <button id="zfit" aria-label="Ekrana sığdır" title="Ekrana sığdır">Sığdır</button>
     <button id="zi" aria-label="Yakınlaştır">+</button>
   </div>
+
   <div class="sp"></div>
-  <span class="ver">v2.2.0</span>
-  <button data-t="ocr" class="pri" aria-pressed="false" id="btnEdit" disabled style="margin-left:12px;border:2px solid var(--ink);">Düzenle</button>
-  <button id="saveAs" class="sec" disabled style="margin-left:6px;">Farklı Kaydet</button>
-  <button id="save" class="pri" disabled>Kaydet</button>
+  <span class="ver">v2.5.1</span>
+
+  <div class="g-actions">
+    <button data-t="ocr" class="pri" aria-pressed="false" id="btnEdit" disabled style="border:2px solid var(--ink);">Düzenle</button>
+    <button id="saveAs" class="sec" disabled>Farklı Kaydet</button>
+    <button id="save" class="pri" disabled>Kaydet</button>
+  </div>
 </header>
 
 <div id="empty">
   <h1>PDF’i buraya bırakın</h1>
   <p>Dosyanız tarayıcıdan çıkmaz. <b>Düzenle</b> butonuna bastığınızda tüm metin kutuları otomatik belirir; tıklayarak veya kutu çizerek canlı önizlemeyle düzenleyin.</p>
-  <label class="btn pri" for="file">PDF seç</label>
-  <button id="sample">Örnek PDF oluştur</button>
+  <div class="acts">
+    <label class="btn pri" for="file">PDF seç</label>
+    <button id="sample" class="sec">Örnek PDF oluştur</button>
+  </div>
 </div>
 <main id="pages"></main>
-<div id="toast" role="alert"></div>
+<div id="toast" role="alert" aria-live="assertive"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script>
 const $=s=>document.querySelector(s);
+const isMobile=()=>window.innerWidth<=768;
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 const S={bytes:null,doc:null,name:'belge.pdf',pgs:[],zoom:1.2,tool:'select',hist:[]};
 let io=null,tt,activeEditorClose=null;
-function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),3200)}
+
+function toast(m,isErr=false){
+  const t=$('#toast');
+  t.textContent=m;
+  t.classList.toggle('err',!!isErr);
+  t.classList.add('show');
+  clearTimeout(tt);
+  tt=setTimeout(()=>t.classList.remove('show'),4000);
+}
 const rotOf=pg=>(pg.base+pg.rot)%360;
+
+function calcFitZoom(){
+  if(!S.pgs.length)return 1.2;
+  const pg=S.pgs[0],R=rotOf(pg),pw=R%180?pg.h:pg.w;
+  const avail=Math.max(260,window.innerWidth-(isMobile()?18:48));
+  return Math.min(isMobile()?1.4:1.3,Math.max(0.35,+(avail/pw).toFixed(2)));
+}
 
 async function load(bytes,name){
   try{
@@ -184,16 +263,17 @@ async function load(bytes,name){
       const p=await doc.getPage(i),v=p.getViewport({scale:1,rotation:0});
       S.pgs.push({n:i,rot:0,base:p.rotate,w:v.width,h:v.height,shapes:[],preview:[],ocrCache:null,ocrLoading:false,hoverBox:null});
     }
+    S.zoom=calcFitZoom();
     $('#empty').hidden=true;$('#save').disabled=false;$('#saveAs').disabled=false;$('#btnEdit').disabled=false;
     build();
-  }catch(e){toast('Bu PDF açılamadı. Parola korumalı ya da bozuk olabilir.')}
+  }catch(e){toast('Bu PDF açılamadı. Parola korumalı ya da bozuk olabilir.',true)}
 }
 
 function build(){
   if(activeEditorClose)activeEditorClose(true);
   const box=$('#pages');box.innerHTML='';
   if(io)io.disconnect();
-  io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){io.unobserve(e.target);draw(e.target._pg,e.target)}}),{rootMargin:'700px'});
+  io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){io.unobserve(e.target);draw(e.target._pg,e.target)}}),{rootMargin:'600px'});
   S.pgs.forEach((pg,i)=>{
     const R=rotOf(pg),sw=(R%180?pg.h:pg.w)*S.zoom,sh=(R%180?pg.w:pg.h)*S.zoom;
     const bar=document.createElement('div');bar.className='bar';bar.style.width=sw+'px';
@@ -287,7 +367,7 @@ function hitTestOcr(pg,x,y){
   if(!pg.ocrCache)return null;
   let target=null,minArea=Infinity;
   for(const seg of pg.ocrCache){
-    const px=Math.max(0.003,seg.w*0.03),py=Math.max(0.002,seg.h*0.18);
+    const px=Math.max(0.004,seg.w*0.04),py=Math.max(0.003,seg.h*0.22);
     if(x>=seg.x-px&&x<=seg.x+seg.w+px&&y>=seg.y-py&&y<=seg.y+seg.h+py){
       const a=seg.w*seg.h;
       if(a<minArea){minArea=a;target=seg}
@@ -300,7 +380,7 @@ function bind(ov,pg){
   let dragging=false;
 
   ov.addEventListener('pointermove',e=>{
-    if(S.tool!=='ocr'||dragging)return;
+    if(S.tool!=='ocr'||dragging||e.pointerType==='touch')return;
     const r=ov.getBoundingClientRect(),R=rotOf(pg);
     const [x,y]=toRaw(R,(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.height);
     const hit=hitTestOcr(pg,x,y);
@@ -334,9 +414,9 @@ function bind(ov,pg){
       };
       const up=()=>{
         dragging=false;
-        ov.removeEventListener('pointermove',mv);ov.removeEventListener('pointerup',up);
+        ov.removeEventListener('pointermove',mv);ov.removeEventListener('pointerup',up);ov.removeEventListener('pointercancel',up);
         pg.preview=[];paint(pg);
-        if(sel.w>0.012 && sel.h>0.008){
+        if(sel.w>0.015 && sel.h>0.01){
           ocrRegionEdit(pg,sel,R);
         }else{
           const hit=hitTestOcr(pg,x0,y0);
@@ -344,11 +424,11 @@ function bind(ov,pg){
           else ensureOcrCache(pg).then(()=>{
             const h2=hitTestOcr(pg,x0,y0);
             if(h2)openFloatingOcrEditor(pg,h2,R);
-            else toast('Burada metin kutusu yok. İsterseniz sürükleyip kutu çizin.');
+            else toast('Burada metin kutusu yok. Parmağınızla/fareyle kutu çizin.');
           });
         }
       };
-      ov.addEventListener('pointermove',mv);ov.addEventListener('pointerup',up);
+      ov.addEventListener('pointermove',mv);ov.addEventListener('pointerup',up);ov.addEventListener('pointercancel',up);
       return;
     }
 
@@ -363,11 +443,11 @@ function bind(ov,pg){
       if(t=='pen')cur.p.push([x,y]);
       else{cur.x=Math.min(x0,x);cur.y=Math.min(y0,y);cur.w=Math.abs(x-x0);cur.h=Math.abs(y-y0)}
       paint(pg)};
-    const up=()=>{ov.removeEventListener('pointermove',mv);ov.removeEventListener('pointerup',up);
+    const up=()=>{ov.removeEventListener('pointermove',mv);ov.removeEventListener('pointerup',up);ov.removeEventListener('pointercancel',up);
       const tiny=t=='pen'?cur.p.length<2:cur.w<.004||cur.h<.004;
       if(tiny)pg.shapes.pop();else push(()=>pg.shapes.splice(pg.shapes.indexOf(cur),1));
       paint(pg)};
-    ov.addEventListener('pointermove',mv);ov.addEventListener('pointerup',up);
+    ov.addEventListener('pointermove',mv);ov.addEventListener('pointerup',up);ov.addEventListener('pointercancel',up);
   });
 }
 
@@ -375,7 +455,8 @@ function addText(ov,pg,e,x,y,c){
   const sh=ov.parentElement,r=ov.getBoundingClientRect(),R=rotOf(pg),size=.022;
   const rw=R%180?r.height:r.width;
   const inp=document.createElement('input');inp.className='ti';
-  inp.style.left=(e.clientX-r.left)+'px';inp.style.top=(e.clientY-r.top)+'px';
+  inp.style.left=Math.min(r.width-130,Math.max(4,e.clientX-r.left))+'px';
+  inp.style.top=(e.clientY-r.top)+'px';
   inp.style.fontSize=(size*rw)+'px';inp.style.color=c;
   sh.appendChild(inp);setTimeout(()=>inp.focus(),0);
   let done=false;
@@ -397,7 +478,7 @@ addEventListener('keydown',e=>{
 
 function rotate(pg){pg.rot=(pg.rot+90)%360;push(()=>{pg.rot=(pg.rot+270)%360},true);build()}
 function del(i){
-  if(S.pgs.length<2)return toast('Son sayfa silinemez.');
+  if(S.pgs.length<2)return toast('Son sayfa silinemez.',true);
   const [pg]=S.pgs.splice(i,1);push(()=>S.pgs.splice(i,0,pg),true);build();
 }
 function move(i,d){
@@ -419,11 +500,13 @@ function setTool(t,silent){
     S.pgs.forEach(pg=>{if(pg.baseCanvas)ensureOcrCache(pg)});
   }
 }
-$('#tools').addEventListener('click',e=>{const b=e.target.closest('[data-t]');if(b)setTool(b.dataset.t)});
+$('#tools').addEventListener('click',e=>{const b=e.target.closest('[data-t]');if(b&&!b.disabled)setTool(b.dataset.t)});
 $('#btnEdit').onclick=()=>setTool(S.tool=='ocr'?'select':'ocr');
 
-function zoom(d){S.zoom=Math.min(3,Math.max(.5,S.zoom+d));if(S.doc)build()}
-$('#zi').onclick=()=>zoom(.2);$('#zo').onclick=()=>zoom(-.2);
+function zoom(d){S.zoom=Math.min(3,Math.max(.35,+(S.zoom+d).toFixed(2)));if(S.doc)build()}
+$('#zi').onclick=()=>zoom(.2);
+$('#zo').onclick=()=>zoom(-.2);
+$('#zfit').onclick=()=>{if(!S.doc)return;S.zoom=calcFitZoom();build()};
 
 /* ---------- OCR (Tesseract.js, Türkçe) ---------- */
 let ocrWorker=null,ocrWorkerLoading=null;
@@ -442,12 +525,12 @@ async function getOcrWorker(){
 async function ensureOcrCache(pg){
   if(pg.ocrCache||pg.ocrLoading)return;
   pg.ocrLoading=true;
+  const c=document.createElement('canvas');
   try{
     toast(`Sayfa ${pg.n} metin kutuları hazırlanıyor...`);
     const w=await getOcrWorker();
     const page=await S.doc.getPage(pg.n);
-    const vp=page.getViewport({scale:2,rotation:0});
-    const c=document.createElement('canvas');
+    const vp=page.getViewport({scale:isMobile()?1.6:2,rotation:0});
     c.width=vp.width;c.height=vp.height;
     await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
 
@@ -482,10 +565,11 @@ async function ensureOcrCache(pg){
 
     pg.ocrCache=boxes;
     paint(pg);
-    toast(`Sayfa ${pg.n} düzenlemeye hazır. Bir kutuya tıklayın.`);
+    toast(`Sayfa ${pg.n} düzenlemeye hazır. Bir kutuya dokunun.`);
   }catch(err){
-    console.error(err);toast('OCR hatası: '+err.message);
+    console.error(err);toast('OCR hatası: '+err.message,true);
   }finally{
+    c.width=0;c.height=0;
     pg.ocrLoading=false;
   }
 }
@@ -513,12 +597,12 @@ function sampleBgColor(pg,box,R){
 }
 
 async function ocrRegionEdit(pg,sel,R){
+  const full=document.createElement('canvas'),crop=document.createElement('canvas');
   try{
     toast('Seçilen bölge okunuyor...');
     const w=await getOcrWorker();
     const page=await S.doc.getPage(pg.n);
-    const vp=page.getViewport({scale:3,rotation:0});
-    const full=document.createElement('canvas');
+    const vp=page.getViewport({scale:isMobile()?2:3,rotation:0});
     full.width=vp.width;full.height=vp.height;
     await page.render({canvasContext:full.getContext('2d'),viewport:vp}).promise;
 
@@ -527,7 +611,6 @@ async function ocrRegionEdit(pg,sel,R){
     const sw=Math.max(10,Math.min(full.width-sx,Math.ceil(sel.w*full.width)));
     const sh=Math.max(10,Math.min(full.height-sy,Math.ceil(sel.h*full.height)));
 
-    const crop=document.createElement('canvas');
     crop.width=sw;crop.height=sh;
     crop.getContext('2d').drawImage(full,sx,sy,sw,sh,0,0,sw,sh);
 
@@ -543,7 +626,9 @@ async function ocrRegionEdit(pg,sel,R){
 
     openFloatingOcrEditor(pg,{text,x:sel.x,y:sel.y,w:sel.w,h:sel.h,lineH:estLineH},R);
   }catch(err){
-    console.error(err);toast('Bölge okunamadı: '+err.message);
+    console.error(err);toast('Bölge okunamadı: '+err.message,true);
+  }finally{
+    full.width=0;full.height=0;crop.width=0;crop.height=0;
   }
 }
 
@@ -580,14 +665,17 @@ function openFloatingOcrEditor(pg,box,R){
     </div>
   `;
 
-  const [sx0,sy0]=fromRaw(R,box.x,box.y);
-  const [sx1,sy1]=fromRaw(R,box.x+box.w,box.y+box.h);
-  const leftPx=Math.max(8,Math.min(sheet.clientWidth-430,Math.min(sx0,sx1)*sheet.clientWidth));
-  const topPx=Math.max(sy0,sy1)*sheet.clientHeight+10;
-  pop.style.left=leftPx+'px';
-  pop.style.top=topPx+'px';
-
-  sheet.appendChild(pop);
+  if(isMobile()){
+    document.body.appendChild(pop);
+  }else{
+    const [sx0,sy0]=fromRaw(R,box.x,box.y);
+    const [sx1,sy1]=fromRaw(R,box.x+box.w,box.y+box.h);
+    const leftPx=Math.max(8,Math.min(sheet.clientWidth-430,Math.min(sx0,sx1)*sheet.clientWidth));
+    const topPx=Math.max(sy0,sy1)*sheet.clientHeight+10;
+    pop.style.left=leftPx+'px';
+    pop.style.top=topPx+'px';
+    sheet.appendChild(pop);
+  }
 
   const ta=pop.querySelector('#ocrTa');
   const szInp=pop.querySelector('#ocrSz');
@@ -678,6 +766,7 @@ async function save(asNew){
         const k=2,c=document.createElement('canvas');c.width=pg.w*k;c.height=pg.h*k;
         shapes(c.getContext('2d'),pg.shapes,c.width,c.height);
         const blob=await new Promise(r=>c.toBlob(r,'image/png'));
+        c.width=0;c.height=0;
         const img=await out.embedPng(new Uint8Array(await blob.arrayBuffer())),mb=p.getMediaBox();
         p.drawImage(img,{x:mb.x,y:mb.y,width:mb.width,height:mb.height});
       }
@@ -688,9 +777,9 @@ async function save(asNew){
     const url=URL.createObjectURL(new Blob([data],{type:'application/pdf'}));
     const a=document.createElement('a');a.href=url;a.download=fname;
     document.body.appendChild(a);a.click();a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    setTimeout(()=>URL.revokeObjectURL(url),5000);
     toast(asNew?'Yeni dosya kaydedildi.':'Kaydedildi.');
-  }catch(e){toast('Kaydedilemedi: '+(e&&e.message||'bilinmeyen hata'))}
+  }catch(e){toast('Kaydedilemedi: '+(e&&e.message||'bilinmeyen hata'),true)}
   btn.disabled=false;
 }
 $('#save').onclick=()=>save(false);
@@ -699,7 +788,7 @@ $('#saveAs').onclick=()=>save(true);
 async function open(f){
   if(!f)return;
   if(f.type&&f.type!=='application/pdf'&&!/\.pdf$/i.test(f.name)){
-    return toast('Lütfen geçerli bir PDF dosyası seçin.');
+    return toast('Lütfen geçerli bir PDF dosyası seçin.',true);
   }
   load(new Uint8Array(await f.arrayBuffer()),f.name);
 }
