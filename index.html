@@ -163,7 +163,6 @@ input[type=color].bg-color{border-radius:50%;width:26px;height:26px}
   .ocr-popover-hint{display:none}
   .ocr-popover-actions{justify-content:flex-end}
 
-  /* Mobilde uyarılar üstte görünür, klavye/alt bar altında kalmaz */
   #toast{
     left:12px;
     right:12px;
@@ -206,7 +205,7 @@ input[type=color].bg-color{border-radius:50%;width:26px;height:26px}
   </div>
 
   <div class="sp"></div>
-  <span class="ver">v2.5.1</span>
+  <span class="ver">v2.5.2</span>
 
   <div class="g-actions">
     <button data-t="ocr" class="pri" aria-pressed="false" id="btnEdit" disabled style="border:2px solid var(--ink);">Düzenle</button>
@@ -592,8 +591,10 @@ function sampleBgColor(pg,box,R){
   for(let y=y0;y<=y1;y+=sy){px(x0,y);px(x1,y)}
   if(!rs.length)return $('#bgColor').value;
   const med=a=>{a.sort((x,y)=>x-y);return a[Math.floor(a.length/2)]};
+  const r=med(rs),g=med(gs),b=med(bs);
+  if(r>240&&g>240&&b>240)return '#ffffff';
   const hx=n=>n.toString(16).padStart(2,'0');
-  return `#${hx(med(rs))}${hx(med(gs))}${hx(med(bs))}`;
+  return `#${hx(r)}${hx(g)}${hx(b)}`;
 }
 
 async function ocrRegionEdit(pg,sel,R){
@@ -753,22 +754,47 @@ function isDarkColor(hex){
   return (0.2126*((rgb>>16)&255)+0.7152*((rgb>>8)&255)+0.0722*(rgb&255))<128;
 }
 
-/* ---------- Kaydet (Yerel Tarayıcı İndirmesi) ---------- */
+/* ---------- Kaydet (Vektör Kapama + Yerel Tarayıcı İndirmesi) ---------- */
 async function save(asNew){
   if(activeEditorClose)activeEditorClose(false);
-  const {PDFDocument,degrees}=PDFLib,btn=$(asNew?'#saveAs':'#save');btn.disabled=true;
+  const {PDFDocument,degrees,rgb}=PDFLib,btn=$(asNew?'#saveAs':'#save');btn.disabled=true;
+  const hexToRgb=h=>{
+    const n=parseInt((h||'#ffffff').slice(1),16);
+    return rgb(((n>>16)&255)/255,((n>>8)&255)/255,(n&255)/255);
+  };
   try{
     const src=await PDFDocument.load(S.bytes,{ignoreEncryption:true}),out=await PDFDocument.create();
     const cps=await out.copyPages(src,S.pgs.map(p=>p.n-1));
     for(let i=0;i<S.pgs.length;i++){
       const pg=S.pgs[i],p=cps[i];out.addPage(p);p.setRotation(degrees(rotOf(pg)));
       if(pg.shapes.length){
-        const k=2,c=document.createElement('canvas');c.width=pg.w*k;c.height=pg.h*k;
-        shapes(c.getContext('2d'),pg.shapes,c.width,c.height);
-        const blob=await new Promise(r=>c.toBlob(r,'image/png'));
-        c.width=0;c.height=0;
-        const img=await out.embedPng(new Uint8Array(await blob.arrayBuffer())),mb=p.getMediaBox();
-        p.drawImage(img,{x:mb.x,y:mb.y,width:mb.width,height:mb.height});
+        const mb=p.getMediaBox();
+
+        // 1) Kapama kutularını kenar izi olmadan doğrudan vektör çiz
+        for(const s of pg.shapes){
+          if(s.t==='white'){
+            const rw=s.w*mb.width,rh=s.h*mb.height;
+            p.drawRectangle({
+              x:mb.x+s.x*mb.width,
+              y:mb.y+mb.height-(s.y*mb.height)-rh,
+              width:rw,
+              height:rh,
+              color:hexToRgb(s.c),
+              borderWidth:0
+            });
+          }
+        }
+
+        // 2) Metin ve diğer çizimleri şeffaf katman olarak üzerine ekle
+        const rest=pg.shapes.filter(s=>s.t!=='white');
+        if(rest.length){
+          const k=2,c=document.createElement('canvas');c.width=pg.w*k;c.height=pg.h*k;
+          shapes(c.getContext('2d'),rest,c.width,c.height);
+          const blob=await new Promise(r=>c.toBlob(r,'image/png'));
+          c.width=0;c.height=0;
+          const img=await out.embedPng(new Uint8Array(await blob.arrayBuffer()));
+          p.drawImage(img,{x:mb.x,y:mb.y,width:mb.width,height:mb.height});
+        }
       }
     }
     const data=await out.save();
