@@ -2,7 +2,7 @@
 
 Tarayıcıda çalışan, sunucu gerektirmeyen PDF görüntüleyici ve düzenleyici. Dosyalarınız cihazınızdan çıkmaz; tüm işlemler tarayıcıda yapılır.
 
-**Canlı sürüm:** `https://mehmet33702.github.io/pdf-atolyesi/`
+**Canlı sürüm:** https://mehmet33702.github.io/pdf-atolyesi/
 
 ## Özellikler
 
