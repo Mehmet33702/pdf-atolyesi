@@ -191,36 +191,78 @@ input[type=color].bg-color { border-radius: 50%; width: 26px; height: 26px; }
   z-index: 5;
 }
 
-/* Yüzer OCR Düzenleme Kartı */
-.ocr-popover {
+/* Sayfa Üstü Boyutlandırılabilir Paragraf Düzenleyici */
+.inline-ocr-wrap {
   position: absolute;
-  z-index: 30;
-  width: min(480px, 94vw);
+  z-index: 25;
+  border: 1px dashed rgba(90, 102, 122, 0.65);
+  box-sizing: border-box;
+}
+
+.inline-ocr-editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.25;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  box-shadow: none;
+}
+
+.inline-ocr-editor:focus-visible { outline: none; }
+
+/* 8 Yönlü Boyutlandırma Tutamaçları */
+.ocr-h {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #fff;
+  border: 1px solid var(--acc);
+  border-radius: 1px;
+  z-index: 28;
+  touch-action: none;
+}
+.ocr-h.n  { top: -4px; left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+.ocr-h.s  { bottom: -4px; left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+.ocr-h.e  { right: -4px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.ocr-h.w  { left: -4px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.ocr-h.nw { top: -4px; left: -4px; cursor: nwse-resize; }
+.ocr-h.ne { top: -4px; right: -4px; cursor: nesw-resize; }
+.ocr-h.sw { bottom: -4px; left: -4px; cursor: nesw-resize; }
+.ocr-h.se { bottom: -4px; right: -4px; cursor: nwse-resize; }
+
+/* Paragraf Üstü Mini Biçimlendirme Çubuğu */
+.inline-ocr-toolbar {
+  position: absolute;
+  z-index: 35;
   background: var(--panel);
   color: var(--ink);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 10px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, .22);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.ocr-popover-bar {
+  border-radius: 8px;
+  padding: 6px 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .2);
   display: flex;
   align-items: center;
   gap: 5px;
   flex-wrap: nowrap;
+  max-width: min(560px, 94vw);
   overflow-x: auto;
   scrollbar-width: none;
   font-size: 12px;
   color: var(--mute);
 }
-.ocr-popover-bar::-webkit-scrollbar { display: none; }
-.ocr-popover-bar label { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; white-space: nowrap; }
-.ocr-popover-bar button { padding: 4px 8px; font-size: 13px; border: 1px solid var(--line); border-radius: 5px; }
-.ocr-popover-bar button.active { background: var(--acc); color: var(--accink); border-color: var(--acc); }
-.ocr-popover-bar input[type=number] {
+.inline-ocr-toolbar::-webkit-scrollbar { display: none; }
+.inline-ocr-toolbar label { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; white-space: nowrap; }
+.inline-ocr-toolbar button { padding: 4px 8px; font-size: 13px; border: 1px solid var(--line); border-radius: 5px; }
+.inline-ocr-toolbar button.active { background: var(--acc); color: var(--accink); border-color: var(--acc); }
+.inline-ocr-toolbar button.pri { border-color: var(--acc); }
+.inline-ocr-toolbar input[type=number] {
   width: 48px;
   padding: 4px 5px;
   border: 1px solid var(--line);
@@ -229,32 +271,18 @@ input[type=color].bg-color { border-radius: 50%; width: 26px; height: 26px; }
   color: var(--ink);
   font: inherit;
 }
-.ocr-popover-bar select {
+.inline-ocr-toolbar select {
   padding: 4px 5px;
   border: 1px solid var(--line);
   border-radius: 5px;
   background: var(--bg);
   color: var(--ink);
   font: inherit;
-  max-width: 120px;
+  max-width: 118px;
   flex-shrink: 0;
 }
-.ocr-popover-bar input[type=color] { width: 24px; height: 24px; border-radius: 4px; }
-.ocr-popover textarea {
-  width: 100%;
-  min-height: 68px;
-  max-height: 220px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--bg);
-  color: var(--ink);
-  font: 15px/1.4 "IBM Plex Sans", Arial, sans-serif;
-  resize: vertical;
-}
-.ocr-popover-actions { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
-.ocr-popover-btns { display: flex; gap: 6px; }
-.ocr-popover-hint { font-size: 11px; color: var(--mute); }
+.inline-ocr-toolbar input[type=color] { width: 24px; height: 24px; border-radius: 4px; }
+.inline-ocr-sep { width: 1px; height: 20px; background: var(--line); flex-shrink: 0; margin: 0 2px; }
 
 /* Bildirim ve Hata Uyarıları */
 #toast {
@@ -317,24 +345,20 @@ input[type=color].bg-color { border-radius: 50%; width: 26px; height: 26px; }
   .bar { width: 100% !important; padding: 0 4px; }
   .bar button { min-height: 32px; padding: 4px 9px; font-size: 13px; }
   .ti { font-size: 16px !important; }
+  .ocr-h { width: 12px; height: 12px; }
 
-  .ocr-popover {
+  .inline-ocr-toolbar {
     position: fixed !important;
     left: 8px !important;
     right: 8px !important;
     top: auto !important;
     bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
-    width: auto !important;
-    max-height: 58vh;
-    overflow-y: auto;
+    max-width: none;
     z-index: 999;
-    padding: 12px;
+    padding: 8px;
   }
-  .ocr-popover textarea,
-  .ocr-popover-bar input[type=number],
-  .ocr-popover-bar select { font-size: 16px; }
-  .ocr-popover-hint { display: none; }
-  .ocr-popover-actions { justify-content: flex-end; }
+  .inline-ocr-toolbar input[type=number],
+  .inline-ocr-toolbar select { font-size: 16px; }
 
   #toast {
     left: 12px;

@@ -9,6 +9,7 @@ const S = {
   bytes: null,
   doc: null,
   name: 'belge.pdf',
+  fileHandle: null,
   pgs: [],
   zoom: 1.2,
   tool: 'select',
@@ -44,6 +45,64 @@ function calcFitZoom() {
   return Math.min(isMobile() ? 1.4 : 1.3, Math.max(0.35, +(avail / pw).toFixed(2)));
 }
 
+/* ---------- Vektör PDF Metni İçin Unicode Font Yönetimi ---------- */
+const PDF_FONT_BASE = 'https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/';
+const PDF_FONT_FILES = {
+  sans:  { r: 'DejaVuSans.ttf',     b: 'DejaVuSans-Bold.ttf',     i: 'DejaVuSans-Oblique.ttf',     bi: 'DejaVuSans-BoldOblique.ttf' },
+  serif: { r: 'DejaVuSerif.ttf',    b: 'DejaVuSerif-Bold.ttf',    i: 'DejaVuSerif-Italic.ttf',     bi: 'DejaVuSerif-BoldItalic.ttf' },
+  mono:  { r: 'DejaVuSansMono.ttf', b: 'DejaVuSansMono-Bold.ttf', i: 'DejaVuSansMono-Oblique.ttf', bi: 'DejaVuSansMono-BoldOblique.ttf' }
+};
+const pdfFontByteCache = new Map();
+
+function pickPdfFontKey(s) {
+  const f = (s.font || '').toLowerCase();
+  const fam = /mono|courier/.test(f) ? 'mono'
+    : (/times|georgia|serif/.test(f) && !/sans/.test(f)) ? 'serif'
+    : 'sans';
+  const style = (s.bold && s.italic) ? 'bi' : s.bold ? 'b' : s.italic ? 'i' : 'r';
+  return `${fam}:${style}`;
+}
+
+async function getEmbeddedPdfFont(pdfDoc, embeddedMap, key) {
+  if (embeddedMap.has(key)) return embeddedMap.get(key);
+  const [fam, style] = key.split(':');
+  const file = PDF_FONT_FILES[fam][style];
+
+  let bytes = pdfFontByteCache.get(file);
+  if (!bytes) {
+    const res = await fetch(PDF_FONT_BASE + file);
+    if (!res.ok) throw new Error('Font indirilemedi: ' + file);
+    bytes = new Uint8Array(await res.arrayBuffer());
+    pdfFontByteCache.set(file, bytes);
+  }
+  const font = await pdfDoc.embedFont(bytes, { subset: true });
+  embeddedMap.set(key, font);
+  return font;
+}
+
+function wrapPdfLines(font, text, size, maxW) {
+  const out = [];
+  for (const para of text.split('\n')) {
+    if (!maxW || !para.trim()) {
+      out.push(para);
+      continue;
+    }
+    const words = para.split(/(\s+)/);
+    let line = '';
+    for (const part of words) {
+      const test = line + part;
+      if (line && font.widthOfTextAtSize(test, size) > maxW) {
+        out.push(line.trimEnd());
+        line = part.trimStart();
+      } else {
+        line = test;
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
+
 /* ---------- Ekranda Ağırlıklı Olan Aktif Sayfayı Yönetme ---------- */
 function getMostVisiblePage() {
   const sheets = document.querySelectorAll('.sheet');
@@ -77,7 +136,6 @@ function updateActiveOcrPage() {
   const bestPg = getMostVisiblePage();
   if (!bestPg || bestPg === S.activeOcrPg) return;
 
-  // Önceki sayfada açık düzenleme varsa kaydedip normal görünüme döndür
   if (S.closeEditor) S.closeEditor(false);
   const prevPg = S.activeOcrPg;
   S.activeOcrPg = bestPg;
@@ -98,7 +156,7 @@ window.addEventListener('scroll', () => {
 }, { passive: true });
 
 /* ---------- PDF Yükleme ve Sayfa Oluşturma ---------- */
-async function load(bytes, name) {
+async function load(bytes, name, fileHandle = null) {
   try {
     if (S.closeEditor) S.closeEditor(true);
     if (S.doc) { try { await S.doc.destroy(); } catch (_) {} }
@@ -107,6 +165,7 @@ async function load(bytes, name) {
     S.bytes = bytes;
     S.doc = doc;
     S.name = name || 'belge.pdf';
+    S.fileHandle = fileHandle;
     S.hist = [];
     S.pgs = [];
     S.activeOcrPg = null;
@@ -216,7 +275,30 @@ async function draw(pg, sheet) {
   }
 }
 
-/* ---------- Çizim ve Katman Yönetimi ---------- */
+/* ---------- Metin Satır Kaydırma ve Çizim Katmanı ---------- */
+function wrapTextLines(ctx, text, maxW) {
+  const out = [];
+  for (const para of text.split('\n')) {
+    if (!maxW || !para.trim()) {
+      out.push(para);
+      continue;
+    }
+    const words = para.split(/(\s+)/);
+    let line = '';
+    for (const part of words) {
+      const test = line + part;
+      if (line && ctx.measureText(test).width > maxW) {
+        out.push(line.trimEnd());
+        line = part.trimStart();
+      } else {
+        line = test;
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
+
 function shapes(ctx, list, W, H) {
   const lw = W * 0.003;
   for (const s of list) {
@@ -250,10 +332,11 @@ function shapes(ctx, list, W, H) {
       ctx.textBaseline = 'top';
       const style = (s.italic ? 'italic ' : '') + (s.bold ? '700 ' : '400 ');
       const px = s.size * W;
-      const family = s.font || '"IBM Plex Sans", Arial, sans-serif';
+      const family = s.font || 'Arial, Helvetica, sans-serif';
       ctx.font = `${style}${px}px ${family}`;
       const lh = px * (s.lh || 1.25);
-      s.s.split('\n').forEach((l, i) => ctx.fillText(l, s.x * W, s.y * H + i * lh));
+      const lines = s.maxW ? wrapTextLines(ctx, s.s, s.maxW * W) : s.s.split('\n');
+      lines.forEach((l, i) => ctx.fillText(l, s.x * W, s.y * H + i * lh));
     }
     ctx.restore();
   }
@@ -280,7 +363,6 @@ function paint(pg) {
     : pg.shapes;
   shapes(ctx, visibleShapes, W, H);
 
-  // Yalnızca aktif olan sayfada OCR metin kutularını göster
   if (S.tool === 'ocr' && S.activeOcrPg === pg && pg.ocrCache) {
     ctx.save();
     const pxLine = Math.max(1, W / 900);
@@ -288,12 +370,12 @@ function paint(pg) {
       const isHover = pg.hoverBox === seg;
       const x = seg.x * W, y = seg.y * H, w = seg.w * W, h = seg.h * H;
       if (isHover) {
-        ctx.fillStyle = 'rgba(42,91,215,0.08)';
+        ctx.fillStyle = 'rgba(42,91,215,0.06)';
         ctx.fillRect(x, y, w, h);
         ctx.strokeStyle = '#2a5bd7';
         ctx.lineWidth = pxLine * 1.6;
       } else {
-        ctx.strokeStyle = 'rgba(115,128,148,0.55)';
+        ctx.strokeStyle = 'rgba(115,128,148,0.5)';
         ctx.lineWidth = pxLine;
       }
       ctx.strokeRect(x, y, w, h);
@@ -333,14 +415,12 @@ function bind(ov, pg) {
     const [x0, y0] = P(e);
 
     if (t === 'ocr') {
-      // Başka bir sayfaya tıklanırsa aktif sayfayı oraya geçir
+      if (S.closeEditor) S.closeEditor(false);
+
       if (S.activeOcrPg !== pg) {
-        if (S.closeEditor) S.closeEditor(false);
         const prev = S.activeOcrPg;
         S.activeOcrPg = pg;
         if (prev) { prev.hoverBox = null; paint(prev); }
-      } else if (S.closeEditor) {
-        S.closeEditor(true);
       }
 
       dragging = true;
@@ -370,7 +450,7 @@ function bind(ov, pg) {
           else ensureOcrCache(pg).then(() => {
             const h2 = hitTestOcr(pg, x0, y0);
             if (h2) openFloatingOcrEditor(pg, h2, R);
-            else toast('Burada metin kutusu yok. Parmağınızla/fareyle kutu çizin.');
+            else toast('Burada metin bloğu yok. Parmağınızla/fareyle kutu çizin.');
           });
         }
       };
@@ -519,9 +599,27 @@ $('#zi').onclick = () => zoom(0.2);
 $('#zo').onclick = () => zoom(-0.2);
 $('#zfit').onclick = () => { if (!S.doc) return; S.zoom = calcFitZoom(); build(); };
 
-/* ---------- Kaydet (Vektör Kapama + Yerel Tarayıcı İndirmesi) ---------- */
+/* ---------- Kaydet (Üzerine Yaz) ve Farklı Kaydet ---------- */
+function triggerDownload(data, fname) {
+  const url = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fname;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
 async function save(asNew) {
   if (S.closeEditor) S.closeEditor(false);
+
+  // "Kaydet" seçildiyse ve dosyanın sistem bağlantısı varsa önce onay iste
+  if (!asNew && S.fileHandle) {
+    const ok = confirm(`"${S.name}" dosyasının üzerine kaydedilsin mi?`);
+    if (!ok) return;
+  }
+
   const { PDFDocument, degrees, rgb } = PDFLib;
   const btn = $(asNew ? '#saveAs' : '#save');
   btn.disabled = true;
@@ -534,6 +632,10 @@ async function save(asNew) {
   try {
     const src = await PDFDocument.load(S.bytes, { ignoreEncryption: true });
     const out = await PDFDocument.create();
+    const canVectorText = typeof fontkit !== 'undefined';
+    if (canVectorText) out.registerFontkit(fontkit);
+
+    const embeddedFonts = new Map();
     const cps = await out.copyPages(src, S.pgs.map(p => p.n - 1));
 
     for (let i = 0; i < S.pgs.length; i++) {
@@ -544,7 +646,7 @@ async function save(asNew) {
       if (pg.shapes.length) {
         const mb = p.getMediaBox();
 
-        // 1) Kapama kutularını kenar izi olmadan doğrudan vektör çiz
+        // 1) Kapama kutularını vektör çiz
         for (const s of pg.shapes) {
           if (s.t === 'white') {
             const rw = s.w * mb.width, rh = s.h * mb.height;
@@ -559,12 +661,46 @@ async function save(asNew) {
           }
         }
 
-        // 2) Metin ve diğer çizimleri şeffaf katman olarak ekle
-        const rest = pg.shapes.filter(s => s.t !== 'white');
-        if (rest.length) {
+        // 2) Metinleri gerçek, seçilebilir vektör PDF metni olarak yaz
+        const fallbackRaster = [];
+        for (const s of pg.shapes) {
+          if (s.t === 'white') continue;
+          if (s.t === 'text' && canVectorText) {
+            try {
+              const font = await getEmbeddedPdfFont(out, embeddedFonts, pickPdfFontKey(s));
+              const fontSize = s.size * mb.width;
+              const lh = fontSize * (s.lh || 1.25);
+              const ascent = font.heightAtSize(fontSize, { descender: false });
+              const lines = s.maxW
+                ? wrapPdfLines(font, s.s, fontSize, s.maxW * mb.width)
+                : s.s.split('\n');
+              const color = hexToRgb(s.c || '#111111');
+              const x = mb.x + s.x * mb.width;
+              const topY = mb.y + mb.height - (s.y * mb.height);
+
+              lines.forEach((line, idx) => {
+                if (!line) return;
+                p.drawText(line, {
+                  x,
+                  y: topY - ascent - idx * lh,
+                  size: fontSize,
+                  font,
+                  color
+                });
+              });
+            } catch (_) {
+              fallbackRaster.push(s);
+            }
+          } else {
+            fallbackRaster.push(s);
+          }
+        }
+
+        // 3) Serbest çizim, vurgu, dikdörtgen (veya çevrimdışı yedek metin) için şeffaf PNG katmanı
+        if (fallbackRaster.length) {
           const k = 2, c = document.createElement('canvas');
           c.width = pg.w * k; c.height = pg.h * k;
-          shapes(c.getContext('2d'), rest, c.width, c.height);
+          shapes(c.getContext('2d'), fallbackRaster, c.width, c.height);
           const blob = await new Promise(r => c.toBlob(r, 'image/png'));
           c.width = 0; c.height = 0;
           const img = await out.embedPng(new Uint8Array(await blob.arrayBuffer()));
@@ -574,19 +710,42 @@ async function save(asNew) {
     }
 
     const data = await out.save();
-    const fname = S.name.replace(/\.pdf$/i, '') + (asNew ? '-kopya' : '-duzenlendi') + '.pdf';
 
-    const url = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fname;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-    toast(asNew ? 'Yeni dosya kaydedildi.' : 'Kaydedildi.');
+    if (!asNew && S.fileHandle) {
+      // Doğrudan açılan dosyanın üzerine yaz
+      const perm = await S.fileHandle.requestPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') throw new Error('Dosyaya yazma izni verilmedi.');
+      const writable = await S.fileHandle.createWritable();
+      await writable.write(data);
+      await writable.close();
+      toast(`"${S.name}" üzerine kaydedildi.`);
+    } else if (window.showSaveFilePicker) {
+      // Farklı Kaydet (veya bağlantısız dosya için ilk Kaydet)
+      const suggested = asNew
+        ? S.name.replace(/\.pdf$/i, '') + '-kopya.pdf'
+        : S.name;
+      const newHandle = await window.showSaveFilePicker({
+        suggestedName: suggested,
+        types: [{ description: 'PDF Dosyası', accept: { 'application/pdf': ['.pdf'] } }]
+      });
+      const writable = await newHandle.createWritable();
+      await writable.write(data);
+      await writable.close();
+      if (!asNew) {
+        S.fileHandle = newHandle;
+        S.name = newHandle.name;
+      }
+      toast(asNew ? 'Farklı konumda kaydedildi.' : `"${newHandle.name}" kaydedildi.`);
+    } else {
+      // Desteklemeyen tarayıcılar için standart indirme
+      const fname = S.name.replace(/\.pdf$/i, '') + (asNew ? '-kopya' : '-duzenlendi') + '.pdf';
+      triggerDownload(data, fname);
+      toast(asNew ? 'Yeni dosya indirildi.' : 'Kaydedildi.');
+    }
   } catch (e) {
-    toast('Kaydedilemedi: ' + (e && e.message || 'bilinmeyen hata'), true);
+    if (e && e.name !== 'AbortError') {
+      toast('Kaydedilemedi: ' + (e.message || 'bilinmeyen hata'), true);
+    }
   }
   btn.disabled = false;
 }
@@ -595,18 +754,47 @@ $('#save').onclick = () => save(false);
 $('#saveAs').onclick = () => save(true);
 
 /* ---------- Dosya Açma, Sürükle-Bırak ve Örnek PDF ---------- */
-async function openFile(f) {
+async function openFile(f, fileHandle = null) {
   if (!f) return;
   if (f.type && f.type !== 'application/pdf' && !/\.pdf$/i.test(f.name)) {
     return toast('Lütfen geçerli bir PDF dosyası seçin.', true);
   }
-  load(new Uint8Array(await f.arrayBuffer()), f.name);
+  load(new Uint8Array(await f.arrayBuffer()), f.name, fileHandle);
 }
 
-$('#file').onchange = e => { openFile(e.target.files[0]); e.target.value = ''; };
+// Chrome/Edge'de "PDF seç" için File System Access API kullan (üzerine kaydetme için)
+$('#file').addEventListener('click', async e => {
+  if (!window.showOpenFilePicker) return;
+  e.preventDefault();
+  try {
+    const [handle] = await window.showOpenFilePicker({
+      types: [{ description: 'PDF Dosyası', accept: { 'application/pdf': ['.pdf'] } }],
+      multiple: false
+    });
+    const f = await handle.getFile();
+    openFile(f, handle);
+  } catch (err) {
+    if (err && err.name !== 'AbortError') toast('Dosya açılamadı.', true);
+  }
+});
+
+$('#file').onchange = e => { openFile(e.target.files[0], null); e.target.value = ''; };
 addEventListener('dragover', e => { e.preventDefault(); $('#empty').classList.add('drag'); });
 addEventListener('dragleave', e => { if (!e.relatedTarget) $('#empty').classList.remove('drag'); });
-addEventListener('drop', e => { e.preventDefault(); $('#empty').classList.remove('drag'); openFile(e.dataTransfer.files[0]); });
+addEventListener('drop', async e => {
+  e.preventDefault();
+  $('#empty').classList.remove('drag');
+  const item = e.dataTransfer.items && e.dataTransfer.items[0];
+  if (item && item.getAsFileSystemHandle) {
+    try {
+      const handle = await item.getAsFileSystemHandle();
+      if (handle && handle.kind === 'file') {
+        return openFile(await handle.getFile(), handle);
+      }
+    } catch (_) {}
+  }
+  openFile(e.dataTransfer.files[0], null);
+});
 
 $('#sample').onclick = async () => {
   const { PDFDocument, StandardFonts, rgb } = PDFLib;
@@ -618,5 +806,9 @@ $('#sample').onclick = async () => {
     p.drawText('Metin, vurgu ve cizim araclarini bu sayfada deneyin.', { x: 60, y: 720, size: 13, font: f });
     p.drawRectangle({ x: 60, y: 520, width: 475, height: 160, borderColor: rgb(0.6, 0.65, 0.75), borderWidth: 1 });
   });
-  load(await d.save(), 'ornek.pdf');
+  load(await d.save(), 'ornek.pdf', null);
 };
+
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
