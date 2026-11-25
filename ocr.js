@@ -10,6 +10,18 @@ const FONT_OPTIONS = [
   { label: 'Courier (Mono)',value: '"Courier New", Courier, monospace' }
 ];
 
+// Sayfa boyutuna ve işlem türüne göre bellek dostu dengeli OCR ölçeği
+function ocrScale(pg, forRegion = false) {
+  const maxPx = forRegion
+    ? (isMobile() ? 8e6 : 16e6)
+    : (isMobile() ? 4e6 : 9e6);
+  const maxScale = forRegion
+    ? (300 / 72)
+    : (isMobile() ? 2.4 : 3.0);
+  const area = Math.max(1, pg.w * pg.h);
+  return Math.max(0.5, Math.min(maxScale, Math.sqrt(maxPx / area)));
+}
+
 async function getOcrWorker() {
   if (ocrWorker) return ocrWorker;
   if (ocrWorkerLoading) return ocrWorkerLoading;
@@ -103,7 +115,7 @@ async function ensureOcrCache(pg) {
     toast(`Sayfa ${pg.n} metin kutuları hazırlanıyor...`);
     const w = await getOcrWorker();
     const page = await S.doc.getPage(pg.n);
-    const vp = page.getViewport({ scale: isMobile() ? 1.6 : 2, rotation: 0 });
+    const vp = page.getViewport({ scale: ocrScale(pg, false), rotation: 0 });
     c.width = vp.width;
     c.height = vp.height;
     await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
@@ -192,7 +204,7 @@ async function ocrRegionEdit(pg, sel, R) {
     toast('Seçilen bölge okunuyor...');
     const w = await getOcrWorker();
     const page = await S.doc.getPage(pg.n);
-    const vp = page.getViewport({ scale: isMobile() ? 2 : 3, rotation: 0 });
+    const vp = page.getViewport({ scale: ocrScale(pg, true), rotation: 0 });
     full.width = vp.width;
     full.height = vp.height;
     await page.render({ canvasContext: full.getContext('2d'), viewport: vp }).promise;
@@ -279,7 +291,7 @@ async function openFloatingOcrEditor(pg, box, R) {
   } else {
     const [sx0, sy0] = fromRaw(R, box.x, box.y);
     const [sx1, sy1] = fromRaw(R, box.x + box.w, box.y + box.h);
-    const leftPx = Math.max(8, Math.min(sheet.clientWidth - 430, Math.min(sx0, sx1) * sheet.clientWidth));
+    const leftPx = Math.max(8, Math.min(sheet.clientWidth - 490, Math.min(sx0, sx1) * sheet.clientWidth));
     const topPx = Math.max(sy0, sy1) * sheet.clientHeight + 10;
     pop.style.left = leftPx + 'px';
     pop.style.top = topPx + 'px';
