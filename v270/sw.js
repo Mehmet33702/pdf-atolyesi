@@ -1,4 +1,4 @@
-const CACHE = 'pdf-atolyesi-v271';
+const CACHE = 'pdf-atolyesi-v272';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './ocr.js', './export.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {

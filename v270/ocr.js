@@ -1,4 +1,4 @@
-/* ---------- OCR (Tesseract.js, Türkçe), Renk/Paragraf Gruplama ve Boyutlandırılabilir Sayfa Üstü Düzenleme ---------- */
+/* ---------- Hibrit (Dijital + OCR) Bloklama, Tek Seferlik Font İzni, Taşıma ve Filigran Koruma ---------- */
 let ocrWorker = null;
 let ocrWorkerLoading = null;
 
@@ -10,12 +10,15 @@ const FONT_OPTIONS = [
   { label: 'Courier (Mono)',value: '"Courier New", Courier, monospace' }
 ];
 
-/* ---------- Bilgisayardaki Yazı Tipleri (Local Font Access API + yedek algılama) ---------- */
+const FONT_CACHE_KEY = 'pdf_atolyesi_sysfonts_v1';
+
+/* ---------- Bilgisayardaki Yazı Tipleri (Tek Seferlik İzin + Önbellek) ---------- */
 const SysFonts = {
-  families: [],          // görüntülenecek aile adları (sıralı)
-  map: new Map(),        // aile -> { r, b, i, bi } (FontData; yalnızca Local Font Access ile)
-  byNorm: new Map(),     // normalize ad -> aile
-  local: false,          // true: queryLocalFonts ile tam liste alındı
+  families: [],
+  map: new Map(),
+  byNorm: new Map(),
+  local: false,
+  askedOnce: false,
   ready: null
 };
 
@@ -36,7 +39,6 @@ const PROBE_FONTS = [
   'Big Caslon', 'Copperplate', 'Papyrus', 'Skia', 'Lucida Grande'
 ];
 
-// Öncelik: benzer ölçülü fontlar arasında berabere kalınırsa bunlardan biri seçilir
 const FONT_PRIORITY = [
   'Times New Roman', 'Arial', 'Calibri', 'Cambria', 'Georgia', 'Verdana', 'Tahoma', 'Segoe UI',
   'Courier New', 'Helvetica', 'Liberation Serif', 'Liberation Sans', 'Liberation Mono'
@@ -88,8 +90,25 @@ function probeInstalledFonts(names) {
   }));
 }
 
-async function loadLocalFonts() {
+async function getLocalFontPermState() {
+  try {
+    if (navigator.permissions && navigator.permissions.query) {
+      const st = await navigator.permissions.query({ name: 'local-fonts' });
+      return st.state; // 'granted' | 'prompt' | 'denied'
+    }
+  } catch (_) {}
+  return 'unknown';
+}
+
+async function loadLocalFonts(explicit = false) {
+  if (SysFonts.local) return true;
   if (typeof window.queryLocalFonts !== 'function') return false;
+
+  const perm = await getLocalFontPermState();
+  if (perm === 'denied') return false;
+  if (!explicit && perm !== 'granted' && SysFonts.askedOnce) return false;
+
+  SysFonts.askedOnce = true;
   try {
     const list = await window.queryLocalFonts();
     if (!list || !list.length) return false;
@@ -108,7 +127,9 @@ async function loadLocalFonts() {
     if (!map.size) return false;
     SysFonts.map = map;
     SysFonts.local = true;
-    setSysFamilies([...map.keys(), 'IBM Plex Sans']);
+    const fams = [...map.keys(), 'IBM Plex Sans'];
+    setSysFamilies(fams);
+    try { localStorage.setItem(FONT_CACHE_KEY, JSON.stringify(fams)); } catch (_) {}
     return true;
   } catch (err) {
     console.warn('Yerel font erişimi alınamadı:', err && err.message);
@@ -116,11 +137,25 @@ async function loadLocalFonts() {
   }
 }
 
-// Kullanıcı hareketi içinde çağrılırsa tarayıcı izin ister (Chrome/Edge masaüstü)
 function initSystemFonts() {
   if (SysFonts.ready) return SysFonts.ready;
   SysFonts.ready = (async () => {
-    const ok = await loadLocalFonts();
+    // Önce daha önce izin verilmişse önbellekten hızlıca yükle (tekrar izin istemez)
+    const perm = await getLocalFontPermState();
+    if (perm === 'granted') {
+      const ok = await loadLocalFonts(false);
+      if (ok) return SysFonts;
+    }
+    try {
+      const cached = JSON.parse(localStorage.getItem(FONT_CACHE_KEY) || 'null');
+      if (Array.isArray(cached) && cached.length) {
+        setSysFamilies(cached);
+        return SysFonts;
+      }
+    } catch (_) {}
+
+    // İlk kez açılıyorsa bir seferlik izin dene; reddedilirse yedek taramaya geç
+    const ok = await loadLocalFonts(false);
     if (!ok) setSysFamilies([...probeInstalledFonts(PROBE_FONTS), 'IBM Plex Sans']);
     return SysFonts;
   })();
@@ -128,7 +163,7 @@ function initSystemFonts() {
 }
 
 async function reloadLocalFonts() {
-  const ok = await loadLocalFonts();
+  const ok = await loadLocalFonts(true);
   if (!ok) toast('Bilgisayar yazı tiplerine erişim izni alınamadı.', true);
   else toast(`${SysFonts.families.length} yazı tipi yüklendi.`);
   return ok;
@@ -149,7 +184,6 @@ async function getLocalFontBytes(family, bold, italic) {
   return bytes;
 }
 
-// PDF içindeki gömülü font adını (örn. "ABCDEE+TimesNewRomanPSMT") kurulu bir aileye eşle
 function matchInstalledFamily(raw) {
   if (!raw) return null;
   const nm = String(raw).replace(/^[A-Z]{6}\+/, '');
@@ -166,7 +200,7 @@ function matchInstalledFamily(raw) {
   return null;
 }
 
-/* ---------- Taranmış Metinden Yazı Tipi Tahmini (kelime genişliği profili) ---------- */
+/* ---------- Taranmış Metinden Yazı Tipi Tahmini ---------- */
 function fontInkWidths(ctx, family, bold, italic, words) {
   ctx.font = `${italic ? 'italic ' : ''}${bold ? '700' : '400'} 100px "${family}", monospace`;
   return words.map(w => {
@@ -325,14 +359,15 @@ function overlapArea(a, b) {
   return ox * oy;
 }
 
+/* ---------- Paragraf Başı ve Satır Başına Göre Hibrit Gruplama ---------- */
 function groupLinesIntoParagraphs(lines) {
   if (!lines.length) return [];
   const sorted = [...lines].sort((a, b) => a.y - b.y || a.x - b.x);
   const groups = [];
-  const bulletRe = /^([•●▪▫\-–—\*]|[A-Ea-e][\.\)]|\d+[\.\)])\s/;
+  const bulletRe = /^([•●▪▫\-–—\*]|[A-Za-zÇĞİÖŞÜçğıöşü][\.\)]|\d+[\.\)])\s/;
 
   for (const ln of sorted) {
-    // Aynı satırda bölünmüş ve mevcut bir paragrafın yatay sınırları içine düşen parçayı son satırla birleştir
+    // 1) Aynı satırda bölünmüş parçayı son satırla birleştir
     let mergedSameLine = false;
     for (const g of groups) {
       const last = g.lines[g.lines.length - 1];
@@ -352,46 +387,61 @@ function groupLinesIntoParagraphs(lines) {
     }
     if (mergedSameLine) continue;
 
+    // 2) Madde işareti ile başlayan satır her zaman yeni blok olsun
+    const startsWithBullet = bulletRe.test(ln.text.trim());
+
     let best = null, bestGap = Infinity;
 
-    for (const g of groups) {
-      if (ln.ink && g.ink && colorDist(ln.ink, g.ink) > 68) continue;
+    if (!startsWithBullet) {
+      for (const g of groups) {
+        if (ln.ink && g.ink && colorDist(ln.ink, g.ink) > 68) continue;
 
-      const last = g.lines[g.lines.length - 1];
-      const avgH = g.lineH;
-      const gapY = ln.y - (last.y + last.h);
+        const last = g.lines[g.lines.length - 1];
+        const avgH = g.lineH;
+        const gapY = ln.y - (last.y + last.h);
 
-      if (gapY < -avgH * 0.25 || gapY > avgH * 0.85) continue;
+        if (gapY < -avgH * 0.25 || gapY > avgH * 0.85) continue;
 
-      const hRatio = ln.h / avgH;
-      if (hRatio < 0.72 || hRatio > 1.38) continue;
+        const hRatio = ln.h / avgH;
+        if (hRatio < 0.72 || hRatio > 1.38) continue;
 
-      const gRight = g.x + g.w;
-      const lRight = ln.x + ln.w;
-      const overlapX = Math.min(gRight, lRight) - Math.max(g.x, ln.x);
-      const minW = Math.min(g.w, ln.w);
-      const maxW = Math.max(g.w, ln.w);
-      const leftDiff = Math.abs(ln.x - g.x);
+        // Yeni paragraf başı tespiti:
+        // a) Önceki satır kısa bitmişse (paragraf sonu) yeni bloğa geç
+        const prevShort = g.lines.length >= 2 && last.w < g.w * 0.80 && /[.!?:;]$/.test(last.text.trim());
+        if (prevShort) continue;
 
-      if (overlapX <= minW * 0.5) continue;
-      if (leftDiff > avgH * 2.5 && overlapX < maxW * 0.6) continue;
+        // b) Bu satır paragrafın gövde sol kenarından belirgin girintiliyse yeni paragraf başıdır
+        const bodyLeft = g.lines.length >= 2 ? Math.min(...g.lines.slice(1).map(l => l.x)) : g.x;
+        const isNewIndent = (ln.x - bodyLeft) > avgH * 1.1;
+        if (isNewIndent) continue;
 
-      const cand = {
-        x: Math.min(g.x, ln.x),
-        y: Math.min(g.y, ln.y),
-        w: Math.max(gRight, lRight) - Math.min(g.x, ln.x),
-        h: Math.max(g.y + g.h, ln.y + ln.h) - Math.min(g.y, ln.y)
-      };
-      let collides = false;
-      for (const other of groups) {
-        if (other === g) continue;
-        if (overlapArea(cand, other) > 0.0001) { collides = true; break; }
-      }
-      if (collides) continue;
+        const gRight = g.x + g.w;
+        const lRight = ln.x + ln.w;
+        const overlapX = Math.min(gRight, lRight) - Math.max(g.x, ln.x);
+        const minW = Math.min(g.w, ln.w);
+        const maxW = Math.max(g.w, ln.w);
+        const leftDiff = Math.abs(ln.x - g.x);
 
-      if (gapY < bestGap) {
-        bestGap = gapY;
-        best = g;
+        if (overlapX <= minW * 0.5) continue;
+        if (leftDiff > avgH * 2.5 && overlapX < maxW * 0.6) continue;
+
+        const cand = {
+          x: Math.min(g.x, ln.x),
+          y: Math.min(g.y, ln.y),
+          w: Math.max(gRight, lRight) - Math.min(g.x, ln.x),
+          h: Math.max(g.y + g.h, ln.y + ln.h) - Math.min(g.y, ln.y)
+        };
+        let collides = false;
+        for (const other of groups) {
+          if (other === g) continue;
+          if (overlapArea(cand, other) > 0.0001) { collides = true; break; }
+        }
+        if (collides) continue;
+
+        if (gapY < bestGap) {
+          bestGap = gapY;
+          best = g;
+        }
       }
     }
 
@@ -443,7 +493,7 @@ function groupLinesIntoParagraphs(lines) {
   });
 }
 
-/* ---------- Paragraf Yerleşimi: Hizalama (iki yana yaslı vb.), İlk Satır Girintisi, Satır Aralığı ---------- */
+/* ---------- Paragraf Yerleşimi ---------- */
 const medianOf = a => {
   if (!a.length) return 0;
   const s = [...a].sort((x, y) => x - y), m = s.length >> 1;
@@ -526,7 +576,7 @@ function detectParagraphLayout(pg, box, jr) {
   return res;
 }
 
-// 1. adım: PDF'te gerçek metin varsa gömülü font adını ve boyutunu oku
+/* ---------- PDF Metin Stilini Algılama ---------- */
 async function detectFromPdfText(pg, box) {
   const page = await S.doc.getPage(pg.n);
   if (!pg.textContent) {
@@ -647,14 +697,133 @@ async function detectPdfTextStyle(pg, box) {
   return out;
 }
 
+/* ---------- Hibrit Blok Hazırlama: Dijital Metin (Filigran Altı Dahil) + OCR Yedeği ---------- */
+async function buildDigitalOcrCache(pg, page) {
+  const tc = await page.getTextContent();
+  const items = (tc.items || []).filter(it => it.str && it.str.trim());
+  const totalChars = items.reduce((s, it) => s + it.str.trim().length, 0);
+  if (items.length < 3 || totalChars < 12) return null;
+
+  const joined = items.map(it => it.str.normalize('NFC')).join('');
+  const broken = (joined.match(/[\uFFFD\uE000-\uF8FF]/g) || []).length;
+  if (broken > Math.max(2, totalChars * 0.02)) return null;
+
+  const vp = page.getViewport({ scale: 1, rotation: 0 });
+  pg.textContent = tc;
+  pg.vp1 = vp;
+
+  const rawWords = [];
+  for (const it of items) {
+    if (!it.transform) continue;
+    const angle = Math.abs(Math.atan2(it.transform[1], it.transform[0]) * 180 / Math.PI);
+    if (angle > 5 && angle < 355) continue; // Çapraz filigranları atla
+
+    const ptSize = Math.hypot(it.transform[2], it.transform[3]) || it.height || 10;
+    if (ptSize < 4 || ptSize > 90) continue;
+
+    const [vx, vy] = vp.convertToViewportPoint(it.transform[4], it.transform[5]);
+    const raw = it.str.normalize('NFC');
+    const wPt = it.width || (raw.length * ptSize * 0.5);
+    const y0 = (vy - ptSize) / vp.height;
+    const h = ptSize / vp.height;
+
+    const parts = raw.split(/(\s+)/);
+    const totalLen = Math.max(1, raw.length);
+    let pos = 0;
+    for (let pi = 0; pi < parts.length; pi++) {
+      const part = parts[pi];
+      const len = part.length;
+      if (part.trim()) {
+        const x0 = (vx + (pos / totalLen) * wPt) / vp.width;
+        const w = Math.max(0.002, ((len / totalLen) * wPt) / vp.width);
+        rawWords.push({
+          t: part.trim(), x: x0, y: y0, w, h, c: 100,
+          leadSp: pi > 0 && /^\s+$/.test(parts[pi - 1]),
+          trailSp: pi < parts.length - 1 && /^\s+$/.test(parts[pi + 1])
+        });
+      }
+      pos += len;
+    }
+  }
+  if (rawWords.length < 3) return null;
+
+  // Satırlara ayır
+  rawWords.sort((a, b) => (a.y + a.h / 2) - (b.y + b.h / 2) || a.x - b.x);
+  const lineGroups = [];
+  for (const wd of rawWords) {
+    const cy = wd.y + wd.h / 2;
+    const last = lineGroups[lineGroups.length - 1];
+    if (last && Math.abs(cy - last.cy) <= 0.55 * Math.min(wd.h, last.h)) {
+      last.words.push(wd);
+      last.cy = (last.cy * (last.words.length - 1) + cy) / last.words.length;
+      last.h = Math.max(last.h, wd.h);
+    } else {
+      lineGroups.push({ words: [wd], cy, h: wd.h });
+    }
+  }
+
+  const rawLines = [];
+  for (const lg of lineGroups) {
+    lg.words.sort((a, b) => a.x - b.x);
+    // Bitişik parçaları aynı kelimede birleştir
+    const merged = [];
+    for (const wd of lg.words) {
+      const prev = merged[merged.length - 1];
+      const gap = prev ? (wd.x - (prev.x + prev.w)) : Infinity;
+      if (prev && !prev.trailSp && !wd.leadSp && gap < Math.max(0.002, Math.min(prev.h, wd.h) * 0.22)) {
+        prev.t += wd.t;
+        prev.w = Math.max(prev.x + prev.w, wd.x + wd.w) - prev.x;
+        prev.trailSp = wd.trailSp;
+      } else {
+        merged.push({ ...wd });
+      }
+    }
+
+    // Geniş yatay boşluklarda (sütun/tablo) satırı böl
+    let seg = [merged[0]];
+    const flush = () => {
+      const x0 = Math.min(...seg.map(w => w.x));
+      const y0 = Math.min(...seg.map(w => w.y));
+      const x1 = Math.max(...seg.map(w => w.x + w.w));
+      const y1 = Math.max(...seg.map(w => w.y + w.h));
+      rawLines.push({
+        text: seg.map(w => w.t).join(' '),
+        x: x0, y: y0, w: x1 - x0, h: y1 - y0,
+        ink: null,
+        words: seg.map(w => ({ t: w.t, x: w.x, w: w.w, c: 100 }))
+      });
+    };
+    for (let i = 1; i < merged.length; i++) {
+      const prev = merged[i - 1], cur = merged[i];
+      const gap = cur.x - (prev.x + prev.w);
+      if (gap > Math.min(prev.h, cur.h) * 2.6) { flush(); seg = [cur]; }
+      else seg.push(cur);
+    }
+    flush();
+  }
+
+  return groupLinesIntoParagraphs(rawLines);
+}
+
 async function ensureOcrCache(pg) {
   if (pg.ocrCache || pg.ocrLoading) return;
   pg.ocrLoading = true;
   const c = document.createElement('canvas');
   try {
+    const page = await S.doc.getPage(pg.n);
+
+    // 1) Önce dijital metin katmanını dene (filigran altındaki kelimeleri %100 yakalar)
+    const digitalBlocks = await buildDigitalOcrCache(pg, page);
+    if (digitalBlocks && digitalBlocks.length) {
+      pg.ocrCache = digitalBlocks;
+      paint(pg);
+      toast(`Sayfa ${pg.n} düzenlemeye hazır. Bir paragrafa tıklayın.`);
+      return;
+    }
+
+    // 2) Taranmış PDF ise Türkçe OCR uygula
     toast(`Sayfa ${pg.n} metin blokları hazırlanıyor...`);
     const w = await getOcrWorker();
-    const page = await S.doc.getPage(pg.n);
     const vp = page.getViewport({ scale: ocrScale(pg, false), rotation: 0 });
     c.width = vp.width;
     c.height = vp.height;
@@ -736,6 +905,91 @@ async function ensureOcrCache(pg) {
     c.width = 0; c.height = 0;
     pg.ocrLoading = false;
   }
+}
+
+/* ---------- Filigranı Koruyan Arka Plan Yaması ---------- */
+function createWatermarkSafePatch(pg, rawBox, R) {
+  const base = pg.baseCanvas;
+  if (!base) return null;
+  const cw = base.width, ch = base.height;
+
+  const corners = [
+    fromRaw(R, rawBox.x, rawBox.y), fromRaw(R, rawBox.x + rawBox.w, rawBox.y),
+    fromRaw(R, rawBox.x, rawBox.y + rawBox.h), fromRaw(R, rawBox.x + rawBox.w, rawBox.y + rawBox.h)
+  ];
+  const xs = corners.map(p => p[0] * cw);
+  const ys = corners.map(p => p[1] * ch);
+
+  const sx = Math.max(0, Math.floor(Math.min(...xs)));
+  const sy = Math.max(0, Math.floor(Math.min(...ys)));
+  const sw = Math.max(4, Math.min(cw - sx, Math.ceil(Math.max(...xs)) - sx));
+  const sh = Math.max(4, Math.min(ch - sy, Math.ceil(Math.max(...ys)) - sy));
+
+  const patch = document.createElement('canvas');
+  patch.width = sw;
+  patch.height = sh;
+  const pctx = patch.getContext('2d', { willReadFrequently: true });
+  pctx.drawImage(base, sx, sy, sw, sh, 0, 0, sw, sh);
+
+  const img = pctx.getImageData(0, 0, sw, sh);
+  const d = img.data;
+  const isText = new Uint8Array(sw * sh);
+
+  // Koyu metin piksellerini işaretle (açık gri filigranlar lum >= 135 olduğu için korunur)
+  for (let i = 0, p = 0; i < isText.length; i++, p += 4) {
+    const lum = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+    if (lum < 130) isText[i] = 1;
+  }
+
+  // Harf kenarlarındaki anti-aliasing piksellerini 1px genişlet
+  const mask = new Uint8Array(isText);
+  for (let y = 1; y < sh - 1; y++) {
+    const row = y * sw;
+    for (let x = 1; x < sw - 1; x++) {
+      const idx = row + x;
+      if (isText[idx - 1] || isText[idx + 1] || isText[idx - sw] || isText[idx + sw]) {
+        mask[idx] = 1;
+      }
+    }
+  }
+
+  // İşaretli koyu harf piksellerini çevredeki en yakın açık (filigran veya beyaz) pikselle doldur
+  const out = new Uint8ClampedArray(d);
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      const idx = y * sw + x;
+      if (!mask[idx]) continue;
+      let rSum = 0, gSum = 0, bSum = 0, cnt = 0;
+      for (let rad = 2; rad <= 10 && cnt < 4; rad += 2) {
+        const pts = [
+          [x - rad, y], [x + rad, y], [x, y - rad], [x, y + rad],
+          [x - rad, y - rad], [x + rad, y + rad], [x - rad, y + rad], [x + rad, y - rad]
+        ];
+        for (const [nx, ny] of pts) {
+          if (nx < 0 || nx >= sw || ny < 0 || ny >= sh) continue;
+          const nIdx = ny * sw + nx;
+          if (!mask[nIdx]) {
+            const np = nIdx * 4;
+            rSum += d[np]; gSum += d[np + 1]; bSum += d[np + 2];
+            cnt++;
+          }
+        }
+      }
+      const p = idx * 4;
+      if (cnt > 0) {
+        out[p] = Math.round(rSum / cnt);
+        out[p + 1] = Math.round(gSum / cnt);
+        out[p + 2] = Math.round(bSum / cnt);
+      } else {
+        out[p] = out[p + 1] = out[p + 2] = 255;
+      }
+      out[p + 3] = 255;
+    }
+  }
+
+  img.data.set(out);
+  pctx.putImageData(img, 0, 0);
+  return patch;
 }
 
 function sampleBgColor(pg, box, R) {
@@ -832,7 +1086,7 @@ async function ocrRegionEdit(pg, sel, R) {
   }
 }
 
-/* ---------- Sayfa Üstünde Boyutlandırılabilir (Word Tarzı) Düzenleyici ---------- */
+/* ---------- Sayfa Üstünde Taşınabilir ve Boyutlandırılabilir Düzenleyici ---------- */
 async function openFloatingOcrEditor(pg, box, R) {
   if (S.closeEditor) S.closeEditor(false);
   const sheet = pg.ov.parentElement;
@@ -865,12 +1119,13 @@ async function openFloatingOcrEditor(pg, box, R) {
     italic: box.lastItalic ?? detectedStyle.italic,
     color: box.lastColor || initColor,
     bg: box.lastBg || detectedBg,
+    keepWm: box.lastKeepWm ?? true,
     align: initAlign,
     indentPt: initIndent,
     lh: initLh
   };
 
-  // Ekrandaki başlangıç dikdörtgeni
+  const origRawBox = { x: box.x, y: box.y, w: box.w, h: box.h };
   const [sx0, sy0] = fromRaw(R, box.x, box.y);
   const [sx1, sy1] = fromRaw(R, box.x + box.w, box.y + box.h);
   const rect = {
@@ -879,11 +1134,17 @@ async function openFloatingOcrEditor(pg, box, R) {
     width: Math.max(36, Math.abs(sx1 - sx0) * sw),
     height: Math.max(16, Math.abs(sy1 - sy0) * sh)
   };
-  let resized = false;
+  let movedOrResized = false;
 
-  // 1) Dış çerçeve ve 8 yönlü boyutlandırma tutamaçları
+  // 1) Dış çerçeve, taşıma tutamacı ve 8 yönlü boyutlandırma tutamaçları
   const wrap = document.createElement('div');
   wrap.className = 'inline-ocr-wrap';
+
+  const dragHandle = document.createElement('div');
+  dragHandle.className = 'ocr-drag';
+  dragHandle.title = 'Kutuyu taşımak için sürükleyin';
+  dragHandle.textContent = '✥ Taşı';
+  wrap.appendChild(dragHandle);
 
   const ta = document.createElement('textarea');
   ta.className = 'inline-ocr-editor';
@@ -908,6 +1169,7 @@ async function openFloatingOcrEditor(pg, box, R) {
     <span class="inline-ocr-sep"></span>
     <label>Yazı: <input type="color" id="ocrFg" value="${state.color}"></label>
     <label>Zemin: <input type="color" id="ocrBg" value="${state.bg}"></label>
+    <label title="Arka plandaki filigranı silmeden sadece eski yazıyı temizler"><input type="checkbox" id="ocrWm" ${state.keepWm ? 'checked' : ''}> Filigranı koru</label>
     <span class="inline-ocr-sep"></span>
     <button type="button" class="sec" id="ocrCancel" title="İptal (Esc)">İptal</button>
     <button type="button" class="pri" id="ocrApply" title="Uygula (Ctrl+Enter)">✓</button>
@@ -922,12 +1184,37 @@ async function openFloatingOcrEditor(pg, box, R) {
       const bw = bar.offsetWidth || 680;
       const bh = bar.offsetHeight || 40;
       const barLeft = Math.max(6, Math.min(sw - bw - 6, rect.left));
-      const barTop = rect.top > bh + 10 ? (rect.top - bh - 6) : (rect.top + rect.height + 8);
+      const barTop = rect.top > bh + 28 ? (rect.top - bh - 24) : (rect.top + rect.height + 8);
       bar.style.left = barLeft + 'px';
       bar.style.top = barTop + 'px';
     }
   };
 
+  // Taşıma (Drag) etkileşimi
+  dragHandle.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragHandle.setPointerCapture(e.pointerId);
+    const startX = e.clientX, startY = e.clientY;
+    const origL = rect.left, origT = rect.top;
+
+    const mv = ev => {
+      rect.left = Math.max(0, Math.min(sw - rect.width, origL + (ev.clientX - startX)));
+      rect.top = Math.max(0, Math.min(sh - rect.height, origT + (ev.clientY - startY)));
+      movedOrResized = true;
+      applyRect();
+    };
+    const up = () => {
+      dragHandle.removeEventListener('pointermove', mv);
+      dragHandle.removeEventListener('pointerup', up);
+      dragHandle.removeEventListener('pointercancel', up);
+    };
+    dragHandle.addEventListener('pointermove', mv);
+    dragHandle.addEventListener('pointerup', up);
+    dragHandle.addEventListener('pointercancel', up);
+  });
+
+  // 8 yönlü boyutlandırma
   ['n', 's', 'e', 'w', 'nw', 'ne', 'sw', 'se'].forEach(dir => {
     const h = document.createElement('div');
     h.className = `ocr-h ${dir}`;
@@ -958,7 +1245,7 @@ async function openFloatingOcrEditor(pg, box, R) {
           rect.height = orig.height + (orig.top - nt);
           rect.top = nt;
         }
-        resized = true;
+        movedOrResized = true;
         applyRect();
       };
       const up = () => {
@@ -985,6 +1272,7 @@ async function openFloatingOcrEditor(pg, box, R) {
   const btnI = bar.querySelector('#ocrI');
   const fgInp = bar.querySelector('#ocrFg');
   const bgInp = bar.querySelector('#ocrBg');
+  const wmInp = bar.querySelector('#ocrWm');
 
   const syncEditorStyle = (autoGrow = true) => {
     const px = (state.fontPx / pg.w) * rw;
@@ -996,14 +1284,13 @@ async function openFloatingOcrEditor(pg, box, R) {
     ta.style.textIndent = ((state.indentPt || 0) / pg.w * rw) + 'px';
     ta.style.lineHeight = String(state.lh);
     ta.style.color = state.color;
-    ta.style.backgroundColor = state.bg;
+    ta.style.backgroundColor = state.keepWm ? 'rgba(255,255,255,0.88)' : state.bg;
     if (autoGrow && ta.scrollHeight > rect.height) {
       rect.height = Math.min(sh - rect.top, ta.scrollHeight + 2);
       applyRect();
     }
   };
 
-  // Güncel ekran kutusunu ham PDF koordinatlarına çevirir
   const getRawBox = () => {
     const [rx0, ry0] = toRaw(R, rect.left / sw, rect.top / sh);
     const [rx1, ry1] = toRaw(R, (rect.left + rect.width) / sw, (rect.top + rect.height) / sh);
@@ -1015,19 +1302,32 @@ async function openFloatingOcrEditor(pg, box, R) {
     };
   };
 
-  const buildShapes = rawBox => {
+  const buildShapes = newRaw => {
     const padX = 0.002, padY = 0.002;
-    const cover = {
-      t: 'white', c: state.bg,
-      x: Math.max(0, rawBox.x - padX), y: Math.max(0, rawBox.y - padY),
-      w: rawBox.w + padX * 2, h: rawBox.h + padY * 2
+    const coverBox = {
+      x: Math.max(0, origRawBox.x - padX),
+      y: Math.max(0, origRawBox.y - padY),
+      w: origRawBox.w + padX * 2,
+      h: origRawBox.h + padY * 2
     };
-    const out = [cover];
+
+    const out = [];
+    if (state.keepWm) {
+      const patchCanvas = createWatermarkSafePatch(pg, coverBox, R);
+      if (patchCanvas) {
+        out.push({ t: 'patch', canvas: patchCanvas, ...coverBox });
+      } else {
+        out.push({ t: 'white', c: state.bg, ...coverBox });
+      }
+    } else {
+      out.push({ t: 'white', c: state.bg, ...coverBox });
+    }
+
     if (state.text.trim()) {
       out.push({
         t: 'text', c: state.color,
-        x: rawBox.x, y: rawBox.y,
-        maxW: rawBox.w,
+        x: newRaw.x, y: newRaw.y,
+        maxW: newRaw.w,
         s: state.text,
         size: state.fontPx / pg.w,
         font: state.font,
@@ -1052,6 +1352,7 @@ async function openFloatingOcrEditor(pg, box, R) {
   szInp.oninput = () => { state.fontPx = Math.max(6, Number(szInp.value) || 12); syncEditorStyle(true); };
   btnB.onclick = () => { state.bold = !state.bold; btnB.classList.toggle('active', state.bold); syncEditorStyle(true); ta.focus(); };
   btnI.onclick = () => { state.italic = !state.italic; btnI.classList.toggle('active', state.italic); syncEditorStyle(true); ta.focus(); };
+  wmInp.onchange = () => { state.keepWm = wmInp.checked; syncEditorStyle(false); };
 
   const alBtns = [...bar.querySelectorAll('[data-al]')];
   const btnIn = bar.querySelector('#ocrIn');
@@ -1068,7 +1369,7 @@ async function openFloatingOcrEditor(pg, box, R) {
   };
   refreshAlign();
   fgInp.oninput = () => { state.color = fgInp.value; syncEditorStyle(false); };
-  bgInp.oninput = () => { state.bg = bgInp.value; $('#bgColor').value = state.bg; syncEditorStyle(false); };
+  bgInp.oninput = () => { state.bg = bgInp.value; state.keepWm = false; wmInp.checked = false; $('#bgColor').value = state.bg; syncEditorStyle(false); };
 
   const close = cancel => {
     S.closeEditor = null;
@@ -1079,7 +1380,7 @@ async function openFloatingOcrEditor(pg, box, R) {
 
     if (!cancel) {
       const changed =
-        resized ||
+        movedOrResized ||
         state.text !== box.text ||
         state.fontPx !== initFontPx ||
         state.font !== (box.lastFont || detectedStyle.font) ||
@@ -1087,6 +1388,7 @@ async function openFloatingOcrEditor(pg, box, R) {
         state.italic !== (box.lastItalic ?? detectedStyle.italic) ||
         state.color !== (box.lastColor || initColor) ||
         state.bg !== (box.lastBg || detectedBg) ||
+        state.keepWm !== (box.lastKeepWm ?? true) ||
         state.align !== initAlign ||
         Math.abs((state.indentPt || 0) - initIndent) > 0.5;
 
@@ -1097,7 +1399,7 @@ async function openFloatingOcrEditor(pg, box, R) {
           text: box.text, x: box.x, y: box.y, w: box.w, h: box.h,
           fontPx: box.lastFontPx, font: box.lastFont,
           bold: box.lastBold, italic: box.lastItalic, color: box.lastColor, bg: box.lastBg,
-          align: box.lastAlign, indent: box.lastIndent, lh: box.lastLh
+          keepWm: box.lastKeepWm, align: box.lastAlign, indent: box.lastIndent, lh: box.lastLh
         };
 
         for (const s of prevApplied) {
@@ -1113,6 +1415,7 @@ async function openFloatingOcrEditor(pg, box, R) {
         box.lastItalic = state.italic;
         box.lastColor = state.color;
         box.lastBg = state.bg;
+        box.lastKeepWm = state.keepWm;
         box.lastAlign = state.align;
         box.lastIndent = state.indentPt;
         box.lastLh = state.lh;
@@ -1134,6 +1437,7 @@ async function openFloatingOcrEditor(pg, box, R) {
           box.lastItalic = prevState.italic;
           box.lastColor = prevState.color;
           box.lastBg = prevState.bg;
+          box.lastKeepWm = prevState.keepWm;
           box.lastAlign = prevState.align;
           box.lastIndent = prevState.indent;
           box.lastLh = prevState.lh;
@@ -1206,7 +1510,6 @@ function fillFontSelect(sel, currentCss) {
   if (!found && sel.options.length) sel.selectedIndex = 0;
 }
 
-// "Düzenle" tıklanınca (kullanıcı hareketi) font listesi için izin iste
 document.getElementById('btnEdit')?.addEventListener('click', () => { initSystemFonts(); });
 
 function isDarkColor(hex) {

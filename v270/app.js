@@ -79,8 +79,6 @@ async function getFallbackPdfFont(pdfDoc, embeddedMap, key) {
   return font;
 }
 
-// Önce bilgisayardaki gerçek fontu gömmeyi dener (Local Font Access);
-// olmazsa ya da Türkçe karakterleri yoksa DejaVu yedeğine döner.
 async function getEmbeddedPdfFont(pdfDoc, embeddedMap, s) {
   if (typeof getLocalFontBytes === 'function' && typeof primaryFamily === 'function') {
     const fam = primaryFamily(s.font);
@@ -127,56 +125,6 @@ function wrapPdfLines(font, text, size, maxW) {
     out.push(line);
   }
   return out;
-}
-
-/* ---------- Orijinal Metni Görünmez Yapan Yardımcılar ---------- */
-/*
-   Beyaz kutu ile kapatılan bölgelerde kalan eski metni:
-   - görsel olarak etkilemeden
-   - kopyalama/arama/ekran okuyucudan gizlemek için
-   PDF content stream'inde 3 Tr (invisible text rendering mode) uygularız.
-   Ardından yeni metni /ActualText marked content içine alırız ki
-   arama/kopyalama/ekran okuyucu yeni metni görsün.
-*/
-
-// Sayfanın /Contents stream'ini birleştirip decode eder
-function decodePageContents(page) {
-  const { PDFRawStream, decodePDFRawStream, PDFArray } = PDFLib;
-  const contents = page.node.Contents();
-  if (!contents) return new Uint8Array(0);
-
-  let refs = [];
-  if (contents instanceof PDFArray) {
-    for (let i = 0; i < contents.size(); i++) refs.push(contents.get(i));
-  } else {
-    refs.push(contents);
-  }
-
-  const parts = [];
-  for (const r of refs) {
-    const stream = r.lookup ? r.lookup() : r;
-    if (stream instanceof PDFRawStream) {
-      parts.push(decodePDFRawStream(stream).decode());
-    }
-  }
-  const total = parts.reduce((a, b) => a + b.length, 0);
-  const out = new Uint8Array(total);
-  let off = 0;
-  for (const p of parts) { out.set(p, off); off += p.length; }
-  return out;
-}
-
-// q ... Q bloklarının dışına çıkmadan 3 Tr uygulanabilir mi kontrolü için
-// basit bir derinlik takibi
-function makeInvisibleTextWrapper() {
-  // Bu fonksiyon content stream'in başına ve sonuna eklenecek
-  // operatörleri döndürür. 3 Tr = invisible text render mode.
-  // Ayrıca Tr'nin q/Q ile geri alınmasını garanti etmek için
-  // kendi q ... Q bloğumuzu açarız.
-  return {
-    open:  '\nq 3 Tr\n',   // önce state kaydet, görünmez moda geç
-    close: '\nQ\n'          // eski moda dön
-  };
 }
 
 /* ---------- Ekranda Ağırlıklı Olan Aktif Sayfayı Yönetme ---------- */
@@ -352,9 +300,7 @@ async function draw(pg, sheet) {
   }
 }
 
-/* ---------- Metin Satır Kaydırma ve Çizim Katmanı ---------- */
-/* ---------- Paragraf Yerleşimi (iki yana yaslama, girinti) – tuval ve PDF için ortak ---------- */
-// Dönen dizi: [{ s: satır metni, last: paragrafın son satırı mı, ind: ilk satır girintisi }]
+/* ---------- Paragraf Yerleşimi (iki yana yaslama, girinti) ---------- */
 function layoutParagraphText(text, maxW, indent, measure) {
   const out = [];
   let firstPara = true;
@@ -399,29 +345,6 @@ function drawAlignedLine(ctx, ln, x, y, maxW, align) {
   ctx.fillText(ln.s, x + ln.ind, y);
 }
 
-function wrapTextLines(ctx, text, maxW) {
-  const out = [];
-  for (const para of text.split('\n')) {
-    if (!maxW || !para.trim()) {
-      out.push(para);
-      continue;
-    }
-    const words = para.split(/(\s+)/);
-    let line = '';
-    for (const part of words) {
-      const test = line + part;
-      if (line && ctx.measureText(test).width > maxW) {
-        out.push(line.trimEnd());
-        line = part.trimStart();
-      } else {
-        line = test;
-      }
-    }
-    out.push(line);
-  }
-  return out;
-}
-
 function shapes(ctx, list, W, H) {
   const lw = W * 0.003;
   for (const s of list) {
@@ -436,6 +359,8 @@ function shapes(ctx, list, W, H) {
     } else if (s.t === 'white') {
       ctx.fillStyle = s.c || '#fff';
       ctx.fillRect(s.x * W, s.y * H, s.w * W, s.h * H);
+    } else if (s.t === 'patch' && s.canvas) {
+      ctx.drawImage(s.canvas, s.x * W, s.y * H, s.w * W, s.h * H);
     } else if (s.t === 'rect') {
       ctx.strokeStyle = s.c;
       ctx.strokeRect(s.x * W, s.y * H, s.w * W, s.h * H);
@@ -738,36 +663,15 @@ function triggerDownload(data, fname) {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
-/* ---------- Beyaz Kutu Kapatma + Eski Metni Gizleme + ActualText ---------- */
-
-// Verilen normalize bbox ile çakışan orijinal metin operatörlerini
-// görünmez yapmak için yeni bir content stream üretir.
-// Teknik: content stream'i bir kopya olarak yeniden yazmıyoruz;
-// başına "q 3 Tr" sonuna "Q" ekliyoruz. Böylece içerideki TÜM
-// metin görünmez olur — yani sadece beyaz kutu ile kapatılan
-// bölge değil, tüm sayfa metni görünmez olur.
-//
-// Bu tüm-sayfa yaklaşımı istenmeyen bir sonuç doğurur; bu yüzden
-// sadece seçili bölgeyi etkilemek için daha ince bir yol izliyoruz:
-// content stream'i parse edip Tj/TJ operatörlerini konumlarına göre
-// filtreliyoruz ve sadece bbox içindekileri 3 Tr bloğuna alıyoruz.
-//
-// Basitlik ve güvenilirlik için aşağıdaki uygulama şunu yapar:
-//  - Bbox içindeki Tj/TJ operatörlerini bulur
-//  - Onları "q 3 Tr <orijinal op> Q" ile sarar
-//  - Yeni metni /ActualText marked content ile yazar (buildPdfBytes'da)
-
-async function maskOriginalTextInBox(page, bboxNorm, pageW, pageH) {
+async function maskOriginalTextInBox(page, bboxNorm) {
   const {
     PDFName, PDFDict, PDFArray, PDFRawStream,
-    decodePDFRawStream, PDFContentStream, PDFOperator,
-    PDFNumber, PDFString, PDFHexString
+    decodePDFRawStream, PDFContentStream, PDFOperator, PDFNumber
   } = PDFLib;
 
   const contents = page.node.Contents();
   if (!contents) return;
 
-  // 1) Tüm content stream'leri birleştir
   let refs = [];
   if (contents instanceof PDFArray) {
     for (let i = 0; i < contents.size(); i++) refs.push(contents.get(i));
@@ -786,21 +690,16 @@ async function maskOriginalTextInBox(page, bboxNorm, pageW, pageH) {
   let off = 0;
   for (const p of parts) { decoded.set(p, off); off += p.length; }
 
-  // 2) Token'lara ayır
   let tokens;
   try { tokens = PDFContentStream.parse(decoded); }
-  catch (_) { return; }  // parse edilemiyorsa dokunma
+  catch (_) { return; }
 
-  // 3) bbox'ı PDF koordinatına çevir (media box bazlı)
   const mb = page.getMediaBox();
   const tx0 = mb.x + bboxNorm.x * mb.width;
   const tx1 = mb.x + (bboxNorm.x + bboxNorm.w) * mb.width;
-  // PDF'te y aşağıdan yukarı; UI'da yukarıdan aşağı
   const ty1 = mb.y + mb.height - bboxNorm.y * mb.height;
   const ty0 = mb.y + mb.height - (bboxNorm.y + bboxNorm.h) * mb.height;
 
-  // 4) Metin durum makinesi + yeniden yaz
-  //    textMatrix (Tm), lineMatrix (Tlm), fontMatrix etkisi yaklaşık
   let tm = [1, 0, 0, 1, 0, 0];
   let tlm = [1, 0, 0, 1, 0, 0];
   let leading = 0;
@@ -823,13 +722,6 @@ async function maskOriginalTextInBox(page, bboxNorm, pageW, pageH) {
     }
     const name = tok.getOperator();
     const ops = tok.operands();
-
-    if (name === 'q' || name === 'Q' || name === 'cm' || name === 'gs' ||
-        name === 'BT' || name === 'ET') {
-      // Bu operatörler matrisi etkilemez veya state'i değiştirir; aynen geçir
-      out.push(tok);
-      continue;
-    }
 
     if (name === 'BT') {
       tm = [1, 0, 0, 1, 0, 0]; tlm = [...tm]; out.push(tok); continue;
@@ -856,7 +748,6 @@ async function maskOriginalTextInBox(page, bboxNorm, pageW, pageH) {
 
     if (name === 'Tj' || name === 'TJ' || name === "'" || name === '"') {
       if (inBox()) {
-        // Bu metin parçasını görünmez yap
         out.push(PDFOperator.of(PDFContentStream.operators.q, []));
         out.push(PDFOperator.of(PDFContentStream.operators.Tr, [PDFNumber.of(3)]));
         out.push(tok);
@@ -867,44 +758,16 @@ async function maskOriginalTextInBox(page, bboxNorm, pageW, pageH) {
       continue;
     }
 
-    // Diğer tüm operatörler: aynen geçir
     out.push(tok);
   }
 
-  // 5) Yeni content stream yaz
   const newStream = PDFContentStream.of(PDFDict.from({}), out);
   page.node.set(PDFName.of('Contents'), page.doc.context.register(newStream));
 }
 
-// buildPdfBytes içinde yeni metni /ActualText ile yaz
-// (mevcut drawText çağrısını saran yardımcı)
-function pushActualTextBegin(ctx, pdfDoc, text) {
-  const { PDFName, PDFDict, PDFOperator, PDFContentStream, PDFHexString, PDFString } = PDFLib;
-  // UTF-16BE hex string olarak yaz (Türkçe karakterler için)
-  const hex = Array.from(text)
-    .map(ch => ch.codePointAt(0).toString(16).padStart(4, '0'))
-    .join('')
-    .toUpperCase();
-  const hexStr = PDFHexString.of(hex + 'FEFF'.replace(/./g, m => m)); // placeholder
-  // Aslında FEFF BOM'u başa koymak gerekir:
-  const bom = 'FEFF';
-  const actual = PDFHexString.of(bom + hex);
-  const props = PDFDict.from({ ActualText: actual });
-  // BDC /Span << /ActualText (...) >> 
-  return PDFOperator.of(PDFContentStream.operators.BDC, [
-    PDFName.of('Span'), props
-  ]);
-}
-
-function pushActualTextEnd() {
-  const { PDFOperator, PDFContentStream } = PDFLib;
-  return PDFOperator.of(PDFContentStream.operators.EMC, []);
-}
-
 /* ---------- Ortak PDF Üretimi ---------- */
 async function buildPdfBytes() {
-  const { PDFDocument, degrees, rgb, PDFName, PDFDict, PDFOperator,
-          PDFContentStream, PDFNumber } = PDFLib;
+  const { PDFDocument, degrees, rgb } = PDFLib;
 
   const hexToRgb = h => {
     const n = parseInt((h || '#ffffff').slice(1), 16);
@@ -927,23 +790,18 @@ async function buildPdfBytes() {
     if (!pg.shapes.length) continue;
     const mb = p.getMediaBox();
 
-    // 1) Orijinal metni, beyaz kutu ile kapatılan bölgelerde gizle
-    //    (kopyalama/arama/ekran okuyucudan düşsün)
+    // 1) Kapatılan bölgelerdeki eski metni kopyalama/aramadan gizle
     try {
       for (const s of pg.shapes) {
-        if (s.t === 'white') {
-          await maskOriginalTextInBox(
-            p,
-            { x: s.x, y: s.y, w: s.w, h: s.h },
-            mb.width, mb.height
-          );
+        if (s.t === 'white' || s.t === 'patch') {
+          await maskOriginalTextInBox(p, { x: s.x, y: s.y, w: s.w, h: s.h });
         }
       }
     } catch (e) {
       console.warn('Orijinal metin maskelenemedi:', e);
     }
 
-    // 2) Beyaz kutuları çiz (görsel kapama)
+    // 2) Beyaz kutular ve filigran koruyan yamaları (metinden önce) çiz
     for (const s of pg.shapes) {
       if (s.t === 'white') {
         const rw = s.w * mb.width, rh = s.h * mb.height;
@@ -955,23 +813,23 @@ async function buildPdfBytes() {
           color: hexToRgb(s.c),
           borderWidth: 0
         });
+      } else if (s.t === 'patch' && s.canvas) {
+        const rw = s.w * mb.width, rh = s.h * mb.height;
+        const blob = await new Promise(r => s.canvas.toBlob(r, 'image/png'));
+        const img = await out.embedPng(new Uint8Array(await blob.arrayBuffer()));
+        p.drawImage(img, {
+          x: mb.x + s.x * mb.width,
+          y: mb.y + mb.height - (s.y * mb.height) - rh,
+          width: rw,
+          height: rh
+        });
       }
     }
 
-    // 3) Metinleri ActualText ile yaz (erişilebilirlik/arama/kopyalama)
-    //    ActualText, PDF spec'te marked content içine alınan içeriğin
-    //    yerine geçen metni tanımlar. Biz görünür metni yine drawText ile
-    //    yazıyoruz; ama ActualText ile sarmak için content stream'e
-    //    doğrudan müdahale gerekir. drawText'in ürettiği stream'i
-    //    sarmak pratik değil; bu yüzden sadece görünür metni bırakıyoruz
-    //    ve masked original'ı gizlemekle yetiniyoruz.
-    //    (ActualText eklemek pdf-lib'de düşük seviye stream düzenlemesi
-    //     gerektirdiğinden ve drawText ile çakıştığından dolayı burada
-    //     tercih edilmedi. Aşağıdaki nota bakın.)
-
+    // 3) Yeni metinleri vektör olarak yaz
     const fallbackRaster = [];
     for (const s of pg.shapes) {
-      if (s.t === 'white') continue;
+      if (s.t === 'white' || s.t === 'patch') continue;
       if (s.t === 'text' && canVectorText) {
         try {
           const font = await getEmbeddedPdfFont(out, embeddedFonts, s);

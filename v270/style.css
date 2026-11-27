@@ -236,7 +236,25 @@ input[type=color].bg-color { border-radius: 50%; width: 26px; height: 26px; }
 .ocr-h.ne { top: -4px; right: -4px; cursor: nesw-resize; }
 .ocr-h.sw { bottom: -4px; left: -4px; cursor: nesw-resize; }
 .ocr-h.se { bottom: -4px; right: -4px; cursor: nwse-resize; }
-
+/* Kutuyu Taşıma Tutamacı */
+.ocr-drag {
+  position: absolute;
+  top: -20px;
+  left: -1px;
+  height: 19px;
+  padding: 0 7px;
+  background: var(--acc);
+  color: var(--accink);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 19px;
+  border-radius: 4px 4px 0 0;
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+  z-index: 29;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .18);
+}
 /* Paragraf Üstü Mini Biçimlendirme Çubuğu */
 .inline-ocr-toolbar {
   position: absolute;
