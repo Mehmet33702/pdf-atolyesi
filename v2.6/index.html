@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <title>PDF Atölyesi</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' blob: data:; worker-src 'self' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; connect-src 'self' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://tessdata.projectnaptha.com;">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&display=swap" rel="stylesheet" crossorigin="anonymous">
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#2a5bd7">
+  <style>
+    @media print {
+      header, #empty, #toast, .modal-back, .bar, .inline-ocr-toolbar, .inline-ocr-wrap, .ocr-h {
+        display: none !important;
+      }
+      #pages { padding: 0 !important; gap: 0 !important; }
+      .sheet { box-shadow: none !important; margin: 0 auto; page-break-after: always; }
+      .sheet canvas { position: static !important; }
+      body::before { display: none !important; }
+      @page { margin: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="g g-file">
+      <label class="btn pri" for="file">PDF aç</label>
+      <input id="file" type="file" accept="application/pdf" hidden>
+    </div>
+
+    <div class="g" id="tools">
+      <button data-t="select" aria-pressed="true">Gez</button>
+      <button data-t="text" aria-pressed="false">Metin</button>
+      <button data-t="hl" aria-pressed="false">Vurgula</button>
+      <button data-t="pen" aria-pressed="false">Çiz</button>
+      <button data-t="rect" aria-pressed="false">Dikdörtgen</button>
+      <button data-t="white" aria-pressed="false">Beyaz kutu</button>
+      <input id="color" type="color" value="#e5484d" aria-label="Çizim/Metin Rengi" title="Çizim/Metin Rengi">
+      <div class="bg-wrap">
+        <span class="bg-lbl">Zemin:</span>
+        <input id="bgColor" type="color" class="bg-color" value="#ffffff" aria-label="Zemin Rengi" title="Sayfa Arka Plan Rengi">
+      </div>
+    </div>
+
+    <div class="g g-view">
+      <button id="undo" disabled title="Geri al">Geri al</button>
+      <button id="zo" aria-label="Uzaklaştır">−</button>
+      <button id="zfit" aria-label="Ekrana sığdır" title="Ekrana sığdır">Sığdır</button>
+      <button id="zi" aria-label="Yakınlaştır">+</button>
+    </div>
+
+    <div class="sp"></div>
+    <span class="ver">v2.6.0</span>
+
+    <div class="g-actions">
+      <button data-t="ocr" class="pri btn-edit" aria-pressed="false" id="btnEdit" disabled>Düzenle</button>
+      <button id="btnConvert" class="sec" disabled title="PDF'i Word / Excel'e çevir (OCR + tablo algılama)">Word/Excel</button>
+      <button id="print" class="sec" disabled title="Yazdır (Ctrl+P)">Yazdır</button>
+      <button id="saveAs" class="sec" disabled>Farklı Kaydet</button>
+      <button id="save" class="pri" disabled>Kaydet</button>
+    </div>
+  </header>
+
+  <div id="empty">
+    <h1>PDF’i buraya bırakın</h1>
+    <p>Dosyanız tarayıcıdan çıkmaz. <b>Düzenle</b> butonuna bastığınızda tüm metin kutuları otomatik belirir; tıklayarak veya kutu çizerek canlı önizlemeyle düzenleyin.</p>
+    <div class="acts">
+      <label class="btn pri" for="file">PDF seç</label>
+      <button id="sample" class="sec">Örnek PDF oluştur</button>
+    </div>
+  </div>
+
+  <main id="pages"></main>
+  <div id="toast" role="alert" aria-live="assertive"></div>
+
+  <!-- Harici Kütüphaneler -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+
+  <!-- Uygulama Dosyaları -->
+  <script src="app.js" defer></script>
+  <script src="ocr.js" defer></script>
+  <script src="export.js" defer></script>
+</body>
+</html>
