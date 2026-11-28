@@ -1,0 +1,17 @@
+{
+  "name": "PDF Atölyesi",
+  "short_name": "PDF Atölyesi",
+  "description": "Tarayıcıda yerel ve güvenli PDF düzenleyici",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#e8ebf1",
+  "theme_color": "#2a5bd7",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
